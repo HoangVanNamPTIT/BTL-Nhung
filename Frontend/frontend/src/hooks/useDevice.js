@@ -16,6 +16,8 @@ export const useDevice = () => {
     applyTelemetryUpdate,
     appendActivity,
     clearActivities,
+    updateDeviceStatus,
+    removeDevice,
   } = useDeviceStore();
 
   return {
@@ -33,5 +35,7 @@ export const useDevice = () => {
     applyTelemetryUpdate,
     appendActivity,
     clearActivities,
+    updateDeviceStatus,
+    removeDevice,
   };
 };

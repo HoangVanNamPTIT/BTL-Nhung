@@ -335,4 +335,11 @@ export const useDeviceStore = create((set, get) => ({
       ),
     }));
   },
+
+  removeDevice: (deviceId) => {
+    console.log(`[Store] 🗑️ Removing device ${deviceId}`);
+    set((state) => ({
+      devices: state.devices.filter((device) => device.id !== deviceId),
+    }));
+  },
 }));

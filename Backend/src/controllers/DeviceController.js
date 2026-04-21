@@ -356,6 +356,150 @@ class DeviceController {
   }
 
   /**
+   * Reconnect device (resume MQTT connection after manual disconnect)
+   */
+  static async reconnectDevice(req, res) {
+    try {
+      const { id } = req.params;
+
+      // Get device with MQTT config
+      const device = await prisma.device.findFirst({
+        where: {
+          id,
+          owner_id: req.user.id,
+        },
+        include: {
+          mqtt_config: true,
+        },
+      });
+
+      if (!device) {
+        return res.status(404).json({
+          error: "Device not found",
+        });
+      }
+
+      if (!device.mqtt_config) {
+        return res.status(400).json({
+          error: "Device MQTT config not found",
+        });
+      }
+
+      // Mark device as online
+      await prisma.device.update({
+        where: { id: device.id },
+        data: { status: "ONLINE", last_connected: new Date() },
+      });
+
+      console.log(
+        `[API] Device ${device.device_name} (${id}) reconnecting...`,
+      );
+
+      // Reconnect MQTT client
+      const { mqttPool } = require("../index");
+      if (mqttPool) {
+        await mqttPool.connectDevice(device);
+      }
+
+      res.json({
+        message: "Device reconnected successfully",
+      });
+    } catch (error) {
+      console.error("Reconnect device error:", error);
+      res.status(500).json({
+        error: "Internal server error",
+      });
+    }
+  }
+
+  /**
+   * Delete device permanently (removes device and all related data)
+   */
+  static async deleteDevice(req, res) {
+    try {
+      const { id } = req.params;
+
+      // Get device
+      const device = await prisma.device.findFirst({
+        where: {
+          id,
+          owner_id: req.user.id,
+        },
+      });
+
+      if (!device) {
+        return res.status(404).json({
+          error: "Device not found",
+        });
+      }
+
+      // Delete device and all related data in transaction
+      await prisma.$transaction(async (tx) => {
+        // Delete all telemetry data for device's rooms
+        const rooms = await tx.room.findMany({
+          where: { device_id: id },
+          select: { id: true },
+        });
+
+        for (const room of rooms) {
+          await tx.telemetryData.deleteMany({
+            where: { room_id: room.id },
+          });
+        }
+
+        // Delete all rooms
+        await tx.room.deleteMany({
+          where: { device_id: id },
+        });
+
+        // Delete MQTT config
+        await tx.mqttConfig.deleteMany({
+          where: { device_id: id },
+        });
+
+        // Delete activity logs
+        await tx.activityLog.deleteMany({
+          where: { device_id: id },
+        });
+
+        // Delete device
+        await tx.device.delete({
+          where: { id },
+        });
+
+        // Log activity (for user's account)
+        await tx.activityLog.create({
+          data: {
+            user_id: req.user.id,
+            device_id: null,
+            event_type: "DEVICE_DELETED",
+            description: `User deleted device "${device.device_name}"`,
+          },
+        });
+      });
+
+      console.log(
+        `[API] Device ${device.device_name} (${id}) deleted by user ${req.user.id}`,
+      );
+
+      // Disconnect MQTT client
+      const { mqttPool } = require("../index");
+      if (mqttPool) {
+        await mqttPool.disconnectDevice(id);
+      }
+
+      res.json({
+        message: "Device deleted successfully",
+      });
+    } catch (error) {
+      console.error("Delete device error:", error);
+      res.status(500).json({
+        error: "Internal server error",
+      });
+    }
+  }
+
+  /**
    * Update device settings (name, room names, MQTT config)
    */
   static async updateSettings(req, res) {

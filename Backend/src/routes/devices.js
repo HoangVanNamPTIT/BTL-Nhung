@@ -13,7 +13,9 @@ router.post("/verify-claim", DeviceController.verifyClaim);
 router.post("/claim", DeviceController.claimDevice);
 router.post("/control", DeviceController.sendControl);
 router.post("/:id/disconnect", DeviceController.disconnectDevice);
+router.post("/:id/reconnect", DeviceController.reconnectDevice);
 router.post("/:id/release", DeviceController.releaseDevice);
+router.delete("/:id", DeviceController.deleteDevice);
 router.put("/:id/settings", DeviceController.updateSettings);
 router.get("/:id/telemetry", DeviceController.getTelemetry);
 

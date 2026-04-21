@@ -47,7 +47,7 @@ const DeviceSection = memo(
       setIsLoading(true);
       try {
         await api.put(`/devices/${device.id}/settings`, {
-          rooms: roomNames,
+          rooms: roomNames.map((r) => ({ id: r.id, room_name: r.name })),
         });
         toast.success("Room names updated");
         setEditingRoomNames(false);
@@ -73,6 +73,38 @@ const DeviceSection = memo(
       } catch (error) {
         toast.error(
           error.response?.data?.error || "Failed to disconnect device",
+        );
+      } finally {
+        setIsLoading(false);
+      }
+    }, [device.id, device.name, onDeviceUpdate]);
+
+    const handleReconnect = useCallback(async () => {
+      setIsLoading(true);
+      try {
+        await api.post(`/devices/${device.id}/reconnect`);
+        toast.success("Device reconnected");
+        if (onDeviceUpdate) onDeviceUpdate();
+      } catch (error) {
+        toast.error(
+          error.response?.data?.error || "Failed to reconnect device",
+        );
+      } finally {
+        setIsLoading(false);
+      }
+    }, [device.id, onDeviceUpdate]);
+
+    const handleDelete = useCallback(async () => {
+      if (!window.confirm(`Are you sure you want to delete "${device.name}"? This action cannot be undone.`)) return;
+
+      setIsLoading(true);
+      try {
+        await api.delete(`/devices/${device.id}`);
+        toast.success("Device deleted successfully");
+        if (onDeviceUpdate) onDeviceUpdate();
+      } catch (error) {
+        toast.error(
+          error.response?.data?.error || "Failed to delete device",
         );
       } finally {
         setIsLoading(false);
@@ -151,12 +183,29 @@ const DeviceSection = memo(
             >
               ✏️ Edit Room Names
             </button>
+            {isOnline ? (
+              <button
+                onClick={handleDisconnect}
+                disabled={isLoading}
+                className="rounded-lg border border-rose-300 px-3 py-1 text-sm font-medium text-rose-700 hover:bg-rose-50 disabled:opacity-50"
+              >
+                ⛔ Disconnect Device
+              </button>
+            ) : (
+              <button
+                onClick={handleReconnect}
+                disabled={isLoading}
+                className="rounded-lg border border-emerald-300 px-3 py-1 text-sm font-medium text-emerald-700 hover:bg-emerald-50 disabled:opacity-50"
+              >
+                🔄 Reconnect Device
+              </button>
+            )}
             <button
-              onClick={handleDisconnect}
+              onClick={handleDelete}
               disabled={isLoading}
-              className="rounded-lg border border-rose-300 px-3 py-1 text-sm font-medium text-rose-700 hover:bg-rose-50 disabled:opacity-50"
+              className="rounded-lg border border-red-300 px-3 py-1 text-sm font-medium text-red-700 hover:bg-red-50 disabled:opacity-50"
             >
-              ⛔ Disconnect Device
+              🗑️ Delete Device
             </button>
           </div>
         </header>
