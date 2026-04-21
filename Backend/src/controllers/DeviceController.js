@@ -20,12 +20,18 @@ class DeviceController {
         where: {
           mac_address,
           claim_pin,
-          owner_id: null,
+          user_devices: {
+            none: {},
+          },
         },
-        select: {
-          id: true,
-          mac_address: true,
-          device_name: true,
+        include: {
+          rooms: {
+            select: {
+              id: true,
+              room_index: true,
+              room_name: true,
+            },
+          },
         },
       });
 
@@ -54,7 +60,11 @@ class DeviceController {
     try {
       const devices = await prisma.device.findMany({
         where: {
-          owner_id: req.user.id,
+          user_devices: {
+            some: {
+              user_id: req.user.id,
+            },
+          },
         },
         include: {
           rooms: {
@@ -96,7 +106,11 @@ class DeviceController {
       const device = await prisma.device.findFirst({
         where: {
           id,
-          owner_id: req.user.id,
+          user_devices: {
+            some: {
+              user_id: req.user.id,
+            },
+          },
         },
         include: {
           rooms: {
@@ -149,47 +163,84 @@ class DeviceController {
         });
       }
 
-      // Find unclaimed device
+      // Find device
       const device = await prisma.device.findFirst({
         where: {
           mac_address,
           claim_pin,
-          owner_id: null,
+        },
+        include: {
+          user_devices: true,
+          rooms: true,
         },
       });
 
       if (!device) {
         return res.status(404).json({
-          error: "Device not found or already claimed",
+          error: "Device not found or invalid PIN",
+        });
+      }
+
+      // Check if any user already has this device
+      if (device.user_devices.length > 0) {
+        return res.status(400).json({
+          error: "Device is already claimed by another user",
+        });
+      }
+
+      // Check if current user already has this device
+      const userAlreadyHasDevice = await prisma.userDevice.findFirst({
+        where: {
+          device_id: device.id,
+          user_id: req.user.id,
+        },
+      });
+
+      if (userAlreadyHasDevice) {
+        return res.status(400).json({
+          error: "You already have access to this device",
         });
       }
 
       // Start transaction
       const claimedDevice = await prisma.$transaction(async (tx) => {
-        // Update device ownership
+        // Create user-device relationship
+        await tx.userDevice.create({
+          data: {
+            user_id: req.user.id,
+            device_id: device.id,
+          },
+        });
+
+        // Update device name
         const updated = await tx.device.update({
           where: { id: device.id },
           data: {
-            owner_id: req.user.id,
             device_name: device_name || `ESP-Device`,
           },
         });
 
-        // Save MQTT config if provided
+        // Save MQTT config if provided and device doesn't already have one
         if (mqtt_config) {
-          await tx.mqttConfig.create({
-            data: {
-              device_id: device.id,
-              broker_url: mqtt_config.broker_url,
-              port: mqtt_config.port,
-              username: mqtt_config.username,
-              password: mqtt_config.password,
-            },
+          const existingConfig = await tx.mqttConfig.findUnique({
+            where: { device_id: device.id },
           });
+
+          if (!existingConfig) {
+            await tx.mqttConfig.create({
+              data: {
+                device_id: device.id,
+                broker_url: mqtt_config.broker_url,
+                port: mqtt_config.port,
+                username: mqtt_config.username,
+                password: mqtt_config.password,
+              },
+            });
+          }
         }
 
-        // Create rooms if provided
-        if (rooms && Array.isArray(rooms)) {
+        // Create rooms if provided and device doesn't already have rooms
+        if (rooms && Array.isArray(rooms) && device.rooms.length === 0) {
           for (let i = 0; i < rooms.length; i++) {
             await tx.room.create({
               data: {
@@ -254,27 +305,37 @@ class DeviceController {
     try {
       const { id } = req.params;
 
-      // Get device
-      const device = await prisma.device.findFirst({
+      // Verify user has access to device
+      const userDevice = await prisma.userDevice.findFirst({
         where: {
-          id,
-          owner_id: req.user.id,
+          device_id: id,
+          user_id: req.user.id,
         },
       });
 
-      if (!device) {
+      if (!userDevice) {
         return res.status(404).json({
           error: "Device not found",
         });
       }
 
+      const device = await prisma.device.findUnique({
+        where: { id },
+      });
+
       // Release device in transaction
       await prisma.$transaction(async (tx) => {
-        // Update device
+        // Remove user-device relationship
+        await tx.userDevice.delete({
+          where: {
+            id: userDevice.id,
+          },
+        });
+
+        // Update device status
         await tx.device.update({
           where: { id: device.id },
           data: {
-            owner_id: null,
             status: "OFFLINE",
           },
         });
@@ -314,12 +375,22 @@ class DeviceController {
     try {
       const { id } = req.params;
 
-      // Get device
-      const device = await prisma.device.findFirst({
+      // Verify user has access to device
+      const userDevice = await prisma.userDevice.findFirst({
         where: {
-          id,
-          owner_id: req.user.id,
+          device_id: id,
+          user_id: req.user.id,
         },
+      });
+
+      if (!userDevice) {
+        return res.status(404).json({
+          error: "Device not found",
+        });
+      }
+
+      const device = await prisma.device.findUnique({
+        where: { id },
       });
 
       if (!device) {
@@ -362,11 +433,24 @@ class DeviceController {
     try {
       const { id } = req.params;
 
+      // Verify user has access to device
+      const userDevice = await prisma.userDevice.findFirst({
+        where: {
+          device_id: id,
+          user_id: req.user.id,
+        },
+      });
+
+      if (!userDevice) {
+        return res.status(404).json({
+          error: "Device not found",
+        });
+      }
+
       // Get device with MQTT config
       const device = await prisma.device.findFirst({
         where: {
           id,
-          owner_id: req.user.id,
         },
         include: {
           mqtt_config: true,
@@ -391,9 +475,7 @@ class DeviceController {
         data: { status: "ONLINE", last_connected: new Date() },
       });
 
-      console.log(
-        `[API] Device ${device.device_name} (${id}) reconnecting...`,
-      );
+      console.log(`[API] Device ${device.device_name} (${id}) reconnecting...`);
 
       // Reconnect MQTT client
       const { mqttPool } = require("../index");
@@ -413,18 +495,28 @@ class DeviceController {
   }
 
   /**
-   * Delete device permanently (removes device and all related data)
+   * Delete device (remove user-device relationship only)
    */
   static async deleteDevice(req, res) {
     try {
       const { id } = req.params;
 
-      // Get device
-      const device = await prisma.device.findFirst({
+      // Verify user has access to device
+      const userDevice = await prisma.userDevice.findFirst({
         where: {
-          id,
-          owner_id: req.user.id,
+          device_id: id,
+          user_id: req.user.id,
         },
+      });
+
+      if (!userDevice) {
+        return res.status(404).json({
+          error: "Device not found",
+        });
+      }
+
+      const device = await prisma.device.findUnique({
+        where: { id },
       });
 
       if (!device) {
@@ -433,63 +525,38 @@ class DeviceController {
         });
       }
 
-      // Delete device and all related data in transaction
+      // Delete only the UserDevice relationship
       await prisma.$transaction(async (tx) => {
-        // Delete all telemetry data for device's rooms
-        const rooms = await tx.room.findMany({
-          where: { device_id: id },
-          select: { id: true },
-        });
-
-        for (const room of rooms) {
-          await tx.telemetryData.deleteMany({
-            where: { room_id: room.id },
-          });
-        }
-
-        // Delete all rooms
-        await tx.room.deleteMany({
-          where: { device_id: id },
-        });
-
-        // Delete MQTT config
-        await tx.mqttConfig.deleteMany({
-          where: { device_id: id },
-        });
-
-        // Delete activity logs
-        await tx.activityLog.deleteMany({
-          where: { device_id: id },
-        });
-
-        // Delete device
-        await tx.device.delete({
-          where: { id },
-        });
-
-        // Log activity (for user's account)
+        // Log activity
         await tx.activityLog.create({
           data: {
             user_id: req.user.id,
-            device_id: null,
-            event_type: "DEVICE_DELETED",
-            description: `User deleted device "${device.device_name}"`,
+            device_id: id,
+            event_type: "DEVICE_REMOVED",
+            description: `User removed access to device "${device.device_name}"`,
+          },
+        });
+
+        // Delete only the user-device relationship
+        await tx.userDevice.delete({
+          where: {
+            id: userDevice.id,
           },
         });
       });
 
       console.log(
-        `[API] Device ${device.device_name} (${id}) deleted by user ${req.user.id}`,
+        `[API] User ${req.user.id} removed device ${device.device_name} (${id})`,
       );
 
-      // Disconnect MQTT client
+      // Disconnect MQTT client only if this user was using it
       const { mqttPool } = require("../index");
       if (mqttPool) {
         await mqttPool.disconnectDevice(id);
       }
 
       res.json({
-        message: "Device deleted successfully",
+        message: "Device removed successfully",
       });
     } catch (error) {
       console.error("Delete device error:", error);
@@ -507,19 +574,23 @@ class DeviceController {
       const { id } = req.params;
       const { device_name, rooms, mqtt_config } = req.body;
 
-      // Verify ownership
-      const device = await prisma.device.findFirst({
+      // Verify user has access to device
+      const userDevice = await prisma.userDevice.findFirst({
         where: {
-          id,
-          owner_id: req.user.id,
+          device_id: id,
+          user_id: req.user.id,
         },
       });
 
-      if (!device) {
+      if (!userDevice) {
         return res.status(404).json({
           error: "Device not found or not owned by user",
         });
       }
+
+      const device = await prisma.device.findUnique({
+        where: { id },
+      });
 
       // Update in transaction
       const updated = await prisma.$transaction(async (tx) => {
@@ -599,11 +670,23 @@ class DeviceController {
       const { id } = req.params;
       const { hours = 24, limit = 100 } = req.query;
 
-      // Verify ownership
+      // Verify user has access to device
+      const userDevice = await prisma.userDevice.findFirst({
+        where: {
+          device_id: id,
+          user_id: req.user.id,
+        },
+      });
+
+      if (!userDevice) {
+        return res.status(404).json({
+          error: "Device not found",
+        });
+      }
+
       const device = await prisma.device.findFirst({
         where: {
           id,
-          owner_id: req.user.id,
         },
         include: {
           rooms: true,
@@ -671,10 +754,23 @@ class DeviceController {
         });
       }
 
-      const device = await prisma.device.findFirst({
+      // Verify user has access to device
+      const userDevice = await prisma.userDevice.findFirst({
+        where: {
+          device_id: deviceId,
+          user_id: req.user.id,
+        },
+      });
+
+      if (!userDevice) {
+        return res.status(404).json({
+          error: "Device not found",
+        });
+      }
+
+      const device = await prisma.device.findUnique({
         where: {
           id: deviceId,
-          owner_id: req.user.id,
         },
       });
 
@@ -713,8 +809,16 @@ class DeviceController {
       });
 
       const { mqttPool } = require("../index");
+      let mqttError = null;
+
       if (mqttPool) {
-        await mqttPool.sendCommand(deviceId, roomIndex, mode, fan);
+        try {
+          await mqttPool.sendCommand(deviceId, roomIndex, mode, fan);
+        } catch (err) {
+          console.error("MQTT send command error:", err.message);
+          mqttError = err.message;
+          // Continue - device state was updated even if MQTT failed
+        }
       }
 
       const description = `Control sent to ${roomEntity.room_name}: mode=${mode}, fan=${fan ? "ON" : "OFF"}`;
@@ -740,11 +844,13 @@ class DeviceController {
       return res.json({
         message: "Control sent successfully",
         room: updatedRoom,
+        mqtt_status: mqttError ? "offline" : "online",
+        mqtt_error: mqttError,
       });
     } catch (error) {
       console.error("Send control error:", error);
       return res.status(500).json({
-        error: "Internal server error",
+        error: error.message || "Internal server error",
       });
     }
   }

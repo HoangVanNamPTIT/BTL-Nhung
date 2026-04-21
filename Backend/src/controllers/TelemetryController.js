@@ -1,4 +1,4 @@
-const { PrismaClient } = require('@prisma/client');
+const { PrismaClient } = require("@prisma/client");
 
 const prisma = new PrismaClient();
 
@@ -16,40 +16,47 @@ class TelemetryController {
         include: {
           device: {
             select: {
-              owner_id: true
-            }
-          }
-        }
+              id: true,
+            },
+          },
+        },
       });
 
       if (!room) {
         return res.status(404).json({
-          error: 'Room not found'
+          error: "Room not found",
         });
       }
 
-      // Verify ownership
-      if (room.device.owner_id !== req.user.id) {
+      // Verify user has access to device
+      const userDevice = await prisma.userDevice.findFirst({
+        where: {
+          device_id: room.device.id,
+          user_id: req.user.id,
+        },
+      });
+
+      if (!userDevice) {
         return res.status(403).json({
-          error: 'Unauthorized'
+          error: "Unauthorized",
         });
       }
 
       // Get latest telemetry data
       const data = await prisma.telemetryData.findFirst({
         where: { room_id: roomId },
-        orderBy: { timestamp: 'desc' }
+        orderBy: { timestamp: "desc" },
       });
 
       res.json({
         room_id: roomId,
         room_name: room.room_name,
-        latest: data || null
+        latest: data || null,
       });
     } catch (error) {
-      console.error('Get latest data error:', error);
+      console.error("Get latest data error:", error);
       res.status(500).json({
-        error: 'Internal server error'
+        error: "Internal server error",
       });
     }
   }
@@ -68,22 +75,29 @@ class TelemetryController {
         include: {
           device: {
             select: {
-              owner_id: true
-            }
-          }
-        }
+              id: true,
+            },
+          },
+        },
       });
 
       if (!room) {
         return res.status(404).json({
-          error: 'Room not found'
+          error: "Room not found",
         });
       }
 
-      // Verify ownership
-      if (room.device.owner_id !== req.user.id) {
+      // Verify user has access to device
+      const userDevice = await prisma.userDevice.findFirst({
+        where: {
+          device_id: room.device.id,
+          user_id: req.user.id,
+        },
+      });
+
+      if (!userDevice) {
         return res.status(403).json({
-          error: 'Unauthorized'
+          error: "Unauthorized",
         });
       }
 
@@ -94,20 +108,25 @@ class TelemetryController {
         where: {
           room_id: roomId,
           timestamp: {
-            gte: since
-          }
+            gte: since,
+          },
         },
-        orderBy: { timestamp: 'asc' },
-        take: parseInt(limit)
+        orderBy: { timestamp: "asc" },
+        take: parseInt(limit),
       });
 
       // Calculate statistics
-      const aqi_values = data.map(d => d.aqi_raw);
+      const aqi_values = data.map((d) => d.aqi_raw);
       const stats = {
         min: aqi_values.length > 0 ? Math.min(...aqi_values) : null,
         max: aqi_values.length > 0 ? Math.max(...aqi_values) : null,
-        avg: aqi_values.length > 0 ? (aqi_values.reduce((a, b) => a + b, 0) / aqi_values.length).toFixed(2) : null,
-        count: aqi_values.length
+        avg:
+          aqi_values.length > 0
+            ? (
+                aqi_values.reduce((a, b) => a + b, 0) / aqi_values.length
+              ).toFixed(2)
+            : null,
+        count: aqi_values.length,
       };
 
       res.json({
@@ -115,12 +134,12 @@ class TelemetryController {
         room_name: room.room_name,
         hours: parseInt(hours),
         stats,
-        data
+        data,
       });
     } catch (error) {
-      console.error('Get historical data error:', error);
+      console.error("Get historical data error:", error);
       res.status(500).json({
-        error: 'Internal server error'
+        error: "Internal server error",
       });
     }
   }

@@ -38,8 +38,8 @@ class MqttPool {
     try {
       const devices = await this.prisma.device.findMany({
         where: {
-          owner_id: {
-            not: null,
+          user_devices: {
+            some: {},
           },
         },
         include: {
@@ -51,7 +51,14 @@ class MqttPool {
 
       for (const device of devices) {
         if (device.mqtt_config) {
-          await this.connectDevice(device);
+          try {
+            await this.connectDevice(device);
+          } catch (err) {
+            console.error(
+              `Failed to connect device ${device.device_name}: ${err.message}`,
+            );
+            // Continue with next device instead of crashing
+          }
         }
       }
 
@@ -175,8 +182,8 @@ class MqttPool {
       this.clients.set(device.id, client);
       console.log(`MQTT client created for device ${device.id}`);
     } catch (error) {
-      console.error(`Error connecting device ${device.id}:`, error);
-      throw error;
+      console.error(`Error connecting device ${device.id}: ${error.message}`);
+      // Don't throw - let caller handle per-device failures
     }
   }
 

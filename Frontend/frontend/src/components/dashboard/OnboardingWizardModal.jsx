@@ -1,14 +1,13 @@
 import { useMemo, useState } from "react";
 import { Button, Input, Modal, Spinner, toast } from "../common";
 
-const defaultRooms = ["Room 1", "Room 2"];
-
 const OnboardingWizardModal = ({ isOpen, onClose, onVerify, onComplete }) => {
   const [step, setStep] = useState(1);
   const [macAddress, setMacAddress] = useState("");
   const [claimPin, setClaimPin] = useState("");
-  const [deviceName, setDeviceName] = useState("Smart Home");
-  const [roomNames, setRoomNames] = useState(defaultRooms);
+  const [deviceName, setDeviceName] = useState("");
+  const [roomNames, setRoomNames] = useState([]);
+  const [verifiedDevice, setVerifiedDevice] = useState(null);
   const [isBusy, setIsBusy] = useState(false);
 
   const canVerify = useMemo(
@@ -20,8 +19,9 @@ const OnboardingWizardModal = ({ isOpen, onClose, onVerify, onComplete }) => {
     setStep(1);
     setMacAddress("");
     setClaimPin("");
-    setDeviceName("Smart Home");
-    setRoomNames(defaultRooms);
+    setDeviceName("");
+    setRoomNames([]);
+    setVerifiedDevice(null);
     setIsBusy(false);
   };
 
@@ -49,6 +49,17 @@ const OnboardingWizardModal = ({ isOpen, onClose, onVerify, onComplete }) => {
         toast.error(verifyResult?.error || "Unable to verify device");
         setIsBusy(false);
         return;
+      }
+
+      // Store verified device info and pre-fill form
+      const device = verifyResult?.device;
+      setVerifiedDevice(device);
+      
+      // Pre-fill with device info from database
+      if (device) {
+        setDeviceName(device.device_name || "");
+        // Don't pre-fill rooms here - will be fetched from backend
+        setRoomNames([]);
       }
 
       setStep(2);
@@ -79,10 +90,8 @@ const OnboardingWizardModal = ({ isOpen, onClose, onVerify, onComplete }) => {
       const result = await onComplete({
         mac_address: macAddress.trim(),
         claim_pin: claimPin.trim(),
-        device_name: deviceName.trim() || "Smart Home",
-        rooms: rooms.length
-          ? rooms
-          : defaultRooms.map((name) => ({ room_name: name })),
+        device_name: deviceName.trim() || verifiedDevice?.device_name || "",
+        rooms: rooms.length ? rooms : [],
       });
 
       if (!result?.success) {
@@ -161,27 +170,34 @@ const OnboardingWizardModal = ({ isOpen, onClose, onVerify, onComplete }) => {
 
         {step === 3 && (
           <div className="space-y-4">
+            <div className="rounded-md bg-blue-50 p-3 text-sm text-blue-700">
+              <p className="font-medium">Device: {verifiedDevice?.device_name}</p>
+              <p className="text-xs text-blue-600 mt-1">
+                This device already has rooms configured in the system.
+              </p>
+            </div>
+
             <Input
               label="Device Name"
               value={deviceName}
               onChange={(e) => setDeviceName(e.target.value)}
-              placeholder="Smart Home"
+              placeholder={verifiedDevice?.device_name || "Device Name"}
             />
 
-            {roomNames.map((roomName, idx) => (
-              <Input
-                key={idx}
-                label={`Room ${idx + 1} Name`}
-                value={roomName}
-                onChange={(e) =>
-                  setRoomNames((prev) =>
-                    prev.map((name, index) =>
-                      index === idx ? e.target.value : name,
-                    ),
-                  )
-                }
-              />
-            ))}
+            <div className="text-sm text-slate-600 bg-slate-50 rounded p-3">
+              <p className="font-medium mb-2">Existing Rooms:</p>
+              {verifiedDevice?.rooms && verifiedDevice.rooms.length > 0 ? (
+                <ul className="space-y-1">
+                  {verifiedDevice.rooms.map((room, idx) => (
+                    <li key={idx} className="text-slate-700">
+                      • {room.room_name}
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="text-slate-500 italic">No rooms configured</p>
+              )}
+            </div>
 
             <Button
               className="w-full"

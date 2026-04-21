@@ -1,6 +1,6 @@
-import { LogOut, Menu } from 'lucide-react';
-import { useAuth } from '../../hooks/useAuth';
-import Button from '../common/Button';
+import { LogOut, Menu } from "lucide-react";
+import { useAuth } from "../../hooks/useAuth";
+import Button from "../common/Button";
 
 const Navbar = ({ onMenuToggle }) => {
   const { user, logout } = useAuth();
@@ -15,7 +15,7 @@ const Navbar = ({ onMenuToggle }) => {
           >
             <Menu size={24} />
           </button>
-          <h1 className="text-2xl font-bold text-blue-600">SmartHome</h1>
+          <h1 className="text-2xl font-bold text-blue-600">AirQuality</h1>
         </div>
 
         <div className="flex items-center gap-4">

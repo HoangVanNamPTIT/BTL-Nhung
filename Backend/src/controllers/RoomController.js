@@ -15,7 +15,7 @@ class RoomController {
         include: {
           device: {
             select: {
-              owner_id: true,
+              id: true,
             },
           },
           telemetry_data: {
@@ -31,8 +31,15 @@ class RoomController {
         });
       }
 
-      // Verify ownership
-      if (room.device.owner_id !== req.user.id) {
+      // Verify user has access to device
+      const userDevice = await prisma.userDevice.findFirst({
+        where: {
+          device_id: room.device.id,
+          user_id: req.user.id,
+        },
+      });
+
+      if (!userDevice) {
         return res.status(403).json({
           error: "Unauthorized",
         });
@@ -69,7 +76,6 @@ class RoomController {
         include: {
           device: {
             select: {
-              owner_id: true,
               id: true,
             },
           },
@@ -82,8 +88,15 @@ class RoomController {
         });
       }
 
-      // Verify ownership
-      if (room.device.owner_id !== req.user.id) {
+      // Verify user has access to device
+      const userDevice = await prisma.userDevice.findFirst({
+        where: {
+          device_id: room.device.id,
+          user_id: req.user.id,
+        },
+      });
+
+      if (!userDevice) {
         return res.status(403).json({
           error: "Unauthorized",
         });
@@ -158,7 +171,6 @@ class RoomController {
         include: {
           device: {
             select: {
-              owner_id: true,
               id: true,
             },
           },
@@ -171,8 +183,15 @@ class RoomController {
         });
       }
 
-      // Verify ownership
-      if (room.device.owner_id !== req.user.id) {
+      // Verify user has access to device
+      const userDevice = await prisma.userDevice.findFirst({
+        where: {
+          device_id: room.device.id,
+          user_id: req.user.id,
+        },
+      });
+
+      if (!userDevice) {
         return res.status(403).json({
           error: "Unauthorized",
         });
@@ -248,7 +267,7 @@ class RoomController {
         include: {
           device: {
             select: {
-              owner_id: true,
+              id: true,
             },
           },
         },
@@ -260,8 +279,15 @@ class RoomController {
         });
       }
 
-      // Verify ownership
-      if (room.device.owner_id !== req.user.id) {
+      // Verify user has access to device
+      const userDevice = await prisma.userDevice.findFirst({
+        where: {
+          device_id: room.device.id,
+          user_id: req.user.id,
+        },
+      });
+
+      if (!userDevice) {
         return res.status(403).json({
           error: "Unauthorized",
         });
