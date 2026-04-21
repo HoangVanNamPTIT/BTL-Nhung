@@ -1,4 +1,4 @@
-const { PrismaClient } = require('@prisma/client');
+const { PrismaClient } = require("@prisma/client");
 
 const prisma = new PrismaClient();
 
@@ -15,36 +15,36 @@ class RoomController {
         include: {
           device: {
             select: {
-              owner_id: true
-            }
+              owner_id: true,
+            },
           },
           telemetry_data: {
-            orderBy: { timestamp: 'desc' },
-            take: 20
-          }
-        }
+            orderBy: { timestamp: "desc" },
+            take: 20,
+          },
+        },
       });
 
       if (!room) {
         return res.status(404).json({
-          error: 'Room not found'
+          error: "Room not found",
         });
       }
 
       // Verify ownership
       if (room.device.owner_id !== req.user.id) {
         return res.status(403).json({
-          error: 'Unauthorized'
+          error: "Unauthorized",
         });
       }
 
       res.json({
-        room
+        room,
       });
     } catch (error) {
-      console.error('Get room error:', error);
+      console.error("Get room error:", error);
       res.status(500).json({
-        error: 'Internal server error'
+        error: "Internal server error",
       });
     }
   }
@@ -57,9 +57,9 @@ class RoomController {
       const { roomId } = req.params;
       const { mode } = req.body;
 
-      if (!['AUTO', 'MANUAL'].includes(mode)) {
+      if (!["AUTO", "MANUAL"].includes(mode)) {
         return res.status(400).json({
-          error: 'Invalid mode. Must be AUTO or MANUAL'
+          error: "Invalid mode. Must be AUTO or MANUAL",
         });
       }
 
@@ -70,39 +70,39 @@ class RoomController {
           device: {
             select: {
               owner_id: true,
-              id: true
-            }
-          }
-        }
+              id: true,
+            },
+          },
+        },
       });
 
       if (!room) {
         return res.status(404).json({
-          error: 'Room not found'
+          error: "Room not found",
         });
       }
 
       // Verify ownership
       if (room.device.owner_id !== req.user.id) {
         return res.status(403).json({
-          error: 'Unauthorized'
+          error: "Unauthorized",
         });
       }
 
       // Update room mode
       const updated = await prisma.room.update({
         where: { id: roomId },
-        data: { current_mode: mode }
+        data: { current_mode: mode },
       });
 
       // Send command to device
-      const { mqttPool } = require('../index');
+      const { mqttPool } = require("../index");
       if (mqttPool) {
         await mqttPool.sendCommand(
           room.device.id,
           room.room_index,
           mode,
-          room.current_fan_status
+          room.current_fan_status,
         );
       }
 
@@ -111,19 +111,29 @@ class RoomController {
         data: {
           user_id: req.user.id,
           device_id: room.device.id,
-          event_type: 'MODE_CHANGED',
-          description: `Changed ${room.room_name} mode to ${mode}`
-        }
+          event_type: "MODE_CHANGED",
+          description: `Changed ${room.room_name} mode to ${mode}`,
+        },
       });
 
+      const { io } = require("../index");
+      if (io) {
+        io.emit("activity_log", {
+          deviceId: room.device.id,
+          eventType: "MODE_CHANGED",
+          description: `Changed ${room.room_name} mode to ${mode}`,
+          timestamp: new Date().toISOString(),
+        });
+      }
+
       res.json({
-        message: 'Mode updated successfully',
-        room: updated
+        message: "Mode updated successfully",
+        room: updated,
       });
     } catch (error) {
-      console.error('Update mode error:', error);
+      console.error("Update mode error:", error);
       res.status(500).json({
-        error: 'Internal server error'
+        error: "Internal server error",
       });
     }
   }
@@ -136,9 +146,9 @@ class RoomController {
       const { roomId } = req.params;
       const { fan } = req.body;
 
-      if (typeof fan !== 'boolean') {
+      if (typeof fan !== "boolean") {
         return res.status(400).json({
-          error: 'Invalid fan value. Must be boolean'
+          error: "Invalid fan value. Must be boolean",
         });
       }
 
@@ -149,46 +159,46 @@ class RoomController {
           device: {
             select: {
               owner_id: true,
-              id: true
-            }
-          }
-        }
+              id: true,
+            },
+          },
+        },
       });
 
       if (!room) {
         return res.status(404).json({
-          error: 'Room not found'
+          error: "Room not found",
         });
       }
 
       // Verify ownership
       if (room.device.owner_id !== req.user.id) {
         return res.status(403).json({
-          error: 'Unauthorized'
+          error: "Unauthorized",
         });
       }
 
       // Check if mode is MANUAL
-      if (room.current_mode !== 'MANUAL') {
+      if (room.current_mode !== "MANUAL") {
         return res.status(400).json({
-          error: 'Cannot control fan in AUTO mode'
+          error: "Cannot control fan in AUTO mode",
         });
       }
 
       // Update room fan status
       const updated = await prisma.room.update({
         where: { id: roomId },
-        data: { current_fan_status: fan }
+        data: { current_fan_status: fan },
       });
 
       // Send command to device
-      const { mqttPool } = require('../index');
+      const { mqttPool } = require("../index");
       if (mqttPool) {
         await mqttPool.sendCommand(
           room.device.id,
           room.room_index,
           room.current_mode,
-          fan
+          fan,
         );
       }
 
@@ -197,19 +207,29 @@ class RoomController {
         data: {
           user_id: req.user.id,
           device_id: room.device.id,
-          event_type: 'FAN_TOGGLED',
-          description: `Turned fan ${fan ? 'ON' : 'OFF'} in ${room.room_name}`
-        }
+          event_type: "FAN_TOGGLED",
+          description: `Turned fan ${fan ? "ON" : "OFF"} in ${room.room_name}`,
+        },
       });
 
+      const { io } = require("../index");
+      if (io) {
+        io.emit("activity_log", {
+          deviceId: room.device.id,
+          eventType: "FAN_TOGGLED",
+          description: `Turned fan ${fan ? "ON" : "OFF"} in ${room.room_name}`,
+          timestamp: new Date().toISOString(),
+        });
+      }
+
       res.json({
-        message: 'Fan updated successfully',
-        room: updated
+        message: "Fan updated successfully",
+        room: updated,
       });
     } catch (error) {
-      console.error('Update fan error:', error);
+      console.error("Update fan error:", error);
       res.status(500).json({
-        error: 'Internal server error'
+        error: "Internal server error",
       });
     }
   }
@@ -228,22 +248,22 @@ class RoomController {
         include: {
           device: {
             select: {
-              owner_id: true
-            }
-          }
-        }
+              owner_id: true,
+            },
+          },
+        },
       });
 
       if (!room) {
         return res.status(404).json({
-          error: 'Room not found'
+          error: "Room not found",
         });
       }
 
       // Verify ownership
       if (room.device.owner_id !== req.user.id) {
         return res.status(403).json({
-          error: 'Unauthorized'
+          error: "Unauthorized",
         });
       }
 
@@ -254,22 +274,22 @@ class RoomController {
         where: {
           room_id: roomId,
           timestamp: {
-            gte: since
-          }
+            gte: since,
+          },
         },
-        orderBy: { timestamp: 'desc' },
-        take: parseInt(limit)
+        orderBy: { timestamp: "desc" },
+        take: parseInt(limit),
       });
 
       res.json({
         room_id: roomId,
         room_name: room.room_name,
-        telemetry: data.reverse()
+        telemetry: data.reverse(),
       });
     } catch (error) {
-      console.error('Get telemetry error:', error);
+      console.error("Get telemetry error:", error);
       res.status(500).json({
-        error: 'Internal server error'
+        error: "Internal server error",
       });
     }
   }

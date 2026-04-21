@@ -1,4 +1,4 @@
-import { useDeviceStore } from '../stores/useDeviceStore';
+import { useDeviceStore } from "../stores/useDeviceStore";
 
 export const useDevice = () => {
   const {
@@ -7,10 +7,14 @@ export const useDevice = () => {
     isLoading,
     error,
     fetchDevices,
-    updateDeviceTelemetry,
-    addDevice,
+    fetchActivities,
+    verifyClaim,
+    claimDevice,
+    setRoomMode,
+    setRoomFan,
     sendControl,
-    addActivity,
+    applyTelemetryUpdate,
+    appendActivity,
     clearActivities,
   } = useDeviceStore();
 
@@ -20,10 +24,14 @@ export const useDevice = () => {
     isLoading,
     error,
     fetchDevices,
-    updateDeviceTelemetry,
-    addDevice,
+    fetchActivities,
+    verifyClaim,
+    claimDevice,
+    setRoomMode,
+    setRoomFan,
     sendControl,
-    addActivity,
+    applyTelemetryUpdate,
+    appendActivity,
     clearActivities,
   };
 };

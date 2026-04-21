@@ -11,76 +11,76 @@ datasource db {
 }
 
 model User {
-  id        String   @id @default(uuid())
-  email     String   @unique
+  id            String   @id @default(uuid())
+  email         String   @unique
   password_hash String
-  full_name String
-  role      String   @default("user") // user, admin
-  created_at DateTime @default(now())
-  
-  devices   Device[]
+  full_name     String
+  role          String   @default("user") // user, admin
+  created_at    DateTime @default(now())
+
+  devices       Device[]
   activity_logs ActivityLog[]
 
   @@map("users")
 }
 
 model Device {
-  id        String   @id @default(uuid())
-  mac_address String @unique
-  claim_pin String
-  owner_id  String?
-  device_name String
-  status    String   @default("OFFLINE") // ONLINE, OFFLINE
+  id             String   @id @default(uuid())
+  mac_address    String   @unique
+  claim_pin      String
+  owner_id       String?
+  device_name    String
+  status         String   @default("OFFLINE") // ONLINE, OFFLINE
   last_connected DateTime?
-  created_at DateTime @default(now())
-  
-  owner     User?     @relation(fields: [owner_id], references: [id], onDelete: SetNull)
-  mqtt_config MqttConfig?
-  rooms     Room[]
-  activity_logs ActivityLog[]
+  created_at     DateTime @default(now())
+
+  owner          User?       @relation(fields: [owner_id], references: [id], onDelete: SetNull)
+  mqtt_config    MqttConfig?
+  rooms          Room[]
+  activity_logs  ActivityLog[]
 
   @@map("devices")
 }
 
 model MqttConfig {
-  id        String   @id @default(uuid())
-  device_id String   @unique
+  id         String   @id @default(uuid())
+  device_id  String   @unique
   broker_url String
-  port      Int
-  username  String
-  password  String
+  port       Int
+  username   String
+  password   String
   created_at DateTime @default(now())
-  
-  device    Device   @relation(fields: [device_id], references: [id], onDelete: Cascade)
+
+  device     Device   @relation(fields: [device_id], references: [id], onDelete: Cascade)
 
   @@map("mqtt_configs")
 }
 
 model Room {
-  id        String   @id @default(uuid())
-  device_id String
-  room_index Int
-  room_name String
-  current_mode String @default("MANUAL") // AUTO, MANUAL
-  current_fan_status Boolean @default(false)
-  created_at DateTime @default(now())
-  
-  device    Device   @relation(fields: [device_id], references: [id], onDelete: Cascade)
-  telemetry_data TelemetryData[]
+  id                 String   @id @default(uuid())
+  device_id          String
+  room_index         Int
+  room_name          String
+  current_mode       String   @default("MANUAL") // AUTO, MANUAL
+  current_fan_status Boolean  @default(false)
+  created_at         DateTime @default(now())
+
+  device             Device          @relation(fields: [device_id], references: [id], onDelete: Cascade)
+  telemetry_data     TelemetryData[]
 
   @@unique([device_id, room_index])
   @@map("rooms")
 }
 
 model TelemetryData {
-  id        BigInt   @id @default(autoincrement())
-  room_id   String
-  aqi_raw   Int
-  aqi_level String  // GOOD, MOD, BAD, DANG
-  fan_is_on Boolean
-  timestamp DateTime @default(now()) @db.DateTime
+  id         BigInt   @id @default(autoincrement())
+  room_id    String
+  aqi_raw    Int
+  aqi_level  String   // GOOD, MOD, BAD, DANG
+  fan_is_on  Boolean
+  timestamp  DateTime @default(now())
 
-  room      Room     @relation(fields: [room_id], references: [id], onDelete: Cascade)
+  room       Room     @relation(fields: [room_id], references: [id], onDelete: Cascade)
 
   @@index([room_id])
   @@index([timestamp])
@@ -88,15 +88,15 @@ model TelemetryData {
 }
 
 model ActivityLog {
-  id        BigInt   @id @default(autoincrement())
-  user_id   String?
-  device_id String
-  event_type String
-  description String @db.Text
-  timestamp DateTime @default(now())
+  id          BigInt   @id @default(autoincrement())
+  user_id     String?
+  device_id   String
+  event_type  String
+  description String   @db.Text
+  timestamp   DateTime @default(now())
 
-  user      User?    @relation(fields: [user_id], references: [id], onDelete: SetNull)
-  device    Device   @relation(fields: [device_id], references: [id], onDelete: Cascade)
+  user        User?    @relation(fields: [user_id], references: [id], onDelete: SetNull)
+  device      Device   @relation(fields: [device_id], references: [id], onDelete: Cascade)
 
   @@index([user_id])
   @@index([device_id])
