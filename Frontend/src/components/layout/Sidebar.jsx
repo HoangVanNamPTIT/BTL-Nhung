@@ -1,7 +1,9 @@
-import { Home, Settings, X } from 'lucide-react';
+import { Home, Settings, X, RefreshCw } from 'lucide-react';
+import { Link, useLocation } from 'react-router-dom';
 import Button from '../common/Button';
 
 const Sidebar = ({ isOpen, onClose, onAddDevice }) => {
+  const location = useLocation();
   return (
     <>
       {isOpen && (
@@ -25,10 +27,26 @@ const Sidebar = ({ isOpen, onClose, onAddDevice }) => {
           </div>
 
           <nav className="space-y-2 flex-1">
-            <button className="w-full flex items-center gap-3 px-4 py-2 text-gray-700 hover:bg-blue-50 hover:text-blue-600 rounded-lg transition-colors">
+            <Link 
+              to="/" 
+              className={`w-full flex items-center gap-3 px-4 py-2 rounded-lg transition-colors ${
+                location.pathname === '/' ? 'bg-blue-50 text-blue-600 font-medium' : 'text-gray-700 hover:bg-gray-50'
+              }`}
+            >
               <Home size={20} />
               <span>Dashboard</span>
-            </button>
+            </Link>
+            
+            <Link 
+              to="/ota" 
+              className={`w-full flex items-center gap-3 px-4 py-2 rounded-lg transition-colors ${
+                location.pathname === '/ota' ? 'bg-blue-50 text-blue-600 font-medium' : 'text-gray-700 hover:bg-gray-50'
+              }`}
+            >
+              <RefreshCw size={20} />
+              <span>Firmware OTA</span>
+            </Link>
+
             <button className="w-full flex items-center gap-3 px-4 py-2 text-gray-700 hover:bg-blue-50 hover:text-blue-600 rounded-lg transition-colors">
               <Settings size={20} />
               <span>Settings</span>

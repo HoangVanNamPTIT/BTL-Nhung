@@ -27,7 +27,7 @@ class MqttPool {
     this.subscriptions = new Map(); // Map<device_id, subscription_handler>
     this.lastTelemetryTime = new Map(); // Map<device_id, timestamp>
     this.offlineTimeouts = new Map(); // Map<device_id, timeout_id>
-    this.TELEMETRY_TIMEOUT = 5000; // 5 seconds - mark offline if no data
+    this.TELEMETRY_TIMEOUT = 15000; // 15 seconds - mark offline if no data
   }
 
   /**

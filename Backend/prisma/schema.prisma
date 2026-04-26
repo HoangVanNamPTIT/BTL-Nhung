@@ -20,6 +20,7 @@ model User {
 
   user_devices  UserDevice[]
   activity_logs ActivityLog[]
+  firmwares     Firmware[]
 
   @@map("users")
 }
@@ -115,4 +116,22 @@ model ActivityLog {
   @@index([device_id])
   @@index([timestamp])
   @@map("activity_logs")
+}
+
+model Firmware {
+  id            String   @id @default(uuid())
+  version       String   @unique
+  filename      String
+  file_path     String
+  file_size     Int
+  md5_hash      String
+  release_notes String?  @db.Text
+  is_active     Boolean  @default(true)
+  download_count Int     @default(0)
+  uploaded_by   String?
+  created_at    DateTime @default(now())
+
+  user          User?    @relation(fields: [uploaded_by], references: [id], onDelete: SetNull)
+
+  @@map("firmwares")
 }

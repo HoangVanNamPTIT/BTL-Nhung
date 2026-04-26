@@ -7,6 +7,18 @@ async function initializeDatabase() {
   try {
     console.log("🚀 Initializing database with complete data...\n");
 
+    // Clear existing data
+    console.log("🧹 Cleaning up old data...");
+    await prisma.telemetryData.deleteMany({});
+    await prisma.activityLog.deleteMany({});
+    await prisma.userDevice.deleteMany({});
+    await prisma.room.deleteMany({});
+    await prisma.mqttConfig.deleteMany({});
+    await prisma.device.deleteMany({});
+    await prisma.user.deleteMany({});
+    await prisma.firmware.deleteMany({}); // Thêm cả bảng firmware mới tạo
+    console.log("✓ Cleanup complete.\n");
+
     // ====================================================
     // 1. Create Users
     // ====================================================
@@ -117,20 +129,40 @@ async function initializeDatabase() {
     console.log(`✓ Created ${rooms.length} rooms (2 per device)\n`);
 
     // ====================================================
-    // 4. Create MQTT Configs (Disabled for now - use public broker)
+    // 4. Create MQTT Configs (HiveMQ Cloud from .env)
     // ====================================================
-    console.log(
-      "📝 Skipping MQTT configurations (use valid credentials later)\n",
-    );
+    console.log("📝 Creating MQTT configurations for all devices...");
+    const mqttConfigs = await Promise.all(devices.map(device => {
+      return prisma.mqttConfig.create({
+        data: {
+          device_id: device.id,
+          broker_url: process.env.MQTT_BROKER_URL || "wss://21b69e31ed5e4e7c86dbc3dc79814eab.s1.eu.hivemq.cloud",
+          port: parseInt(process.env.MQTT_PORT) || 8884,
+          username: process.env.MQTT_USERNAME || "nhung1",
+          password: process.env.MQTT_PASSWORD || "12345Nhung"
+        }
+      });
+    }));
+    console.log(`✓ Created ${mqttConfigs.length} MQTT configurations\n`);
     // NOTE: To enable MQTT, provide valid credentials:
     // - Broker: mqtts://your-broker.hivemq.cloud or mqtt://test.mosquitto.org
     // - Username/Password: Valid credentials for your broker
     // - Port: 8883 for mqtts, 1883 for mqtt
 
     // ====================================================
-    // 5. User-Device Relationships (Skipped - Leave Empty)
+    // 5. User-Device Relationships (Link all devices to User A)
     // ====================================================
-    console.log("📝 Skipping user-device relationships (table left empty)\n");
+    console.log("📝 Linking devices to User A (a@test.com)...");
+    const userDevicePromises = devices.map(device => {
+      return prisma.userDevice.create({
+        data: {
+          user_id: user1.id,
+          device_id: device.id
+        }
+      });
+    });
+    await Promise.all(userDevicePromises);
+    console.log(`✓ Linked ${devices.length} devices to User A\n`);
 
     // ====================================================
     // 6. Create Sample Telemetry Data
@@ -205,8 +237,8 @@ async function initializeDatabase() {
     console.log(`    - Claim PIN for all: 654321\n`);
 
     console.log(`  • Rooms: ${rooms.length} (2 per device)`);
-    console.log(`  • MQTT Configs: 0 (disabled - add valid credentials later)`);
-    console.log(`  • User-Device Relationships: 0 (table left empty)`);
+    console.log(`  • MQTT Configs: ${mqttConfigs.length} (HiveMQ Cloud)`);
+    console.log(`  • User-Device Relationships: ${userDevicePromises.length} (Linked to User A)`);
     console.log(`  • Telemetry Records: ${telemetryData.length}`);
     console.log(`  • Activity Logs: ${activityLogs.length}\n`);
 

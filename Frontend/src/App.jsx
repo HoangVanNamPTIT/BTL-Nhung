@@ -3,6 +3,7 @@ import { useAuth } from './hooks/useAuth';
 import { Toast } from './components/common';
 import ProtectedRoute from './utils/ProtectedRoute';
 import { LoginPage, DashboardPage } from './pages';
+import OTAManagement from './pages/OTAManagement';
 
 function App() {
   const { isAuthenticated, token } = useAuth();
@@ -25,6 +26,14 @@ function App() {
           element={
             <ProtectedRoute>
               <DashboardPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/ota"
+          element={
+            <ProtectedRoute>
+              <OTAManagement />
             </ProtectedRoute>
           }
         />

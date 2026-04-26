@@ -22,6 +22,7 @@ const io = socketIo(server, {
 
 const prisma = new PrismaClient();
 const mqttPool = new MqttPool(prisma, io);
+app.set("mqttPool", mqttPool);
 
 // Prevent "Do not know how to serialize a BigInt" when returning Prisma rows.
 app.set("json replacer", (key, value) =>
@@ -47,6 +48,7 @@ app.use("/api/devices", require("./routes/devices"));
 app.use("/api/rooms", require("./routes/rooms"));
 app.use("/api/telemetry", require("./routes/telemetry"));
 app.use("/api/activity", require("./routes/activity"));
+app.use("/api/firmware", require("./routes/firmwareRoutes"));
 
 // Health check
 app.get("/health", (req, res) => {
