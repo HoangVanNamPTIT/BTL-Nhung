@@ -128,6 +128,15 @@ class MqttPool {
             console.log("✓ Subscribed to air/data (legacy topic)");
           }
         });
+
+        // Subscribe to OTA update status topic
+        client.subscribe("air/firmwareupdatestatus", (err) => {
+          if (err) {
+            console.error("Failed to subscribe to air/firmwareupdatestatus:", err);
+          } else {
+            console.log("✓ Subscribed to air/firmwareupdatestatus");
+          }
+        });
       });
 
       // Handle incoming messages
@@ -194,18 +203,26 @@ class MqttPool {
   async handleMqttMessage(deviceId, topic, message) {
     try {
       const payload = JSON.parse(message.toString());
-      console.log(
-        `[MQTT] 📨 Message from device ${deviceId} on topic ${topic}:`,
-        JSON.stringify(payload).substring(0, 200),
-      );
+      console.log(`\n[MQTT] 📨 ===== NEW MESSAGE FROM DEVICE =====`);
+      console.log(`[MQTT] Device ID: ${deviceId}`);
+      console.log(`[MQTT] Topic: ${topic}`);
+      console.log(`[MQTT] Payload:`, JSON.stringify(payload, null, 2));
 
       if (topic.startsWith("air/data")) {
+        console.log(`[MQTT] ➜ Processing as telemetry data`);
         // Process telemetry data
         await this.processTelemetryData(deviceId, payload);
+      } else if (topic === "air/firmwareupdatestatus") {
+        console.log(`[MQTT] ➜ Processing as firmware update status`);
+        // Process firmware update status
+        await this.handleFirmwareUpdateStatus(deviceId, payload);
+      } else {
+        console.log(`[MQTT] ⚠️ Unknown topic: ${topic} (ignoring)`);
       }
+      console.log(`[MQTT] ===== MESSAGE PROCESSED =====\n`);
     } catch (error) {
       console.error(
-        `Error processing MQTT message from device ${deviceId}:`,
+        `[MQTT] ❌ Error processing message from device ${deviceId}:`,
         error,
       );
     }
@@ -364,10 +381,143 @@ class MqttPool {
   }
 
   /**
-   * Send control command to device
-   * Publish to air/control/{device_id} with payload: { "room": 1, "mode": "MANUAL", "fan": false }
+   * Handle firmware update status from device
+   * Expected payload: { "mac_address": "XX:XX:XX:XX:XX:XX", "update": true, "status": "success|failed", "version": "1.0.0" }
    */
-  async sendCommand(deviceId, room, mode, fan) {
+  async handleFirmwareUpdateStatus(deviceId, payload) {
+    try {
+      console.log(`[OTA] 📡 Firmware update status received:`, payload);
+
+      const { mac_address, status, version, error } = payload;
+
+      if (!status) {
+        console.warn("[OTA] Invalid firmware update status payload:", payload);
+        return;
+      }
+
+      // Find device by mac_address (from device's hardcoded MAC)
+      let device = null;
+      if (mac_address) {
+        device = await this.prisma.device.findUnique({
+          where: { mac_address },
+          select: { id: true, device_name: true, mac_address: true },
+        });
+
+        if (!device) {
+          console.warn(
+            `[OTA] ❌ Device not found with mac_address: ${mac_address}`,
+          );
+          return;
+        }
+      } else {
+        console.warn(
+          "[OTA] ⚠️ Payload missing mac_address, cannot identify device",
+        );
+        return;
+      }
+
+      const actualDeviceId = device.id;
+      console.log(
+        `[OTA] ✅ Device matched: ${device.device_name} (${device.mac_address})`,
+      );
+
+      // Find the firmware update log entry by version + device_id
+      let updateLog = null;
+      if (version) {
+        const firmware = await this.prisma.firmware.findUnique({
+          where: { version },
+          select: { id: true, version: true },
+        });
+
+        if (firmware) {
+          updateLog = await this.prisma.firmwareUpdateLog.findFirst({
+            where: {
+              firmware_id: firmware.id,
+              device_id: actualDeviceId,
+            },
+            include: { firmware: true, device: true },
+          });
+        } else {
+          console.warn(`[OTA] Firmware not found with version: ${version}`);
+        }
+      }
+
+      if (updateLog) {
+        // Update the firmware update log
+        const updatedLog = await this.prisma.firmwareUpdateLog.update({
+          where: { id: updateLog.id },
+          data: {
+            status: status === "success" ? "success" : "failed",
+            error_message: error || null,
+            completed_at: new Date(),
+          },
+        });
+
+        console.log(
+          `[OTA] 📝 Updated firmware update log: ID=${updatedLog.id}, status=${updatedLog.status}`,
+        );
+        console.log(
+          `     Device: ${device.device_name}, Version: ${version}, Status: ${updatedLog.status}`,
+        );
+
+        // Emit to frontend via Socket.io
+        console.log(
+          `[OTA] 📡 Emitting firmware_update_status to all clients: deviceId=${actualDeviceId}`,
+        );
+        
+        // Log number of connected clients
+        const connectedClients = Object.keys(this.io.sockets.sockets).length;
+        console.log(`[OTA] 📊 Connected Socket.io clients: ${connectedClients}`);
+        
+        const eventData = {
+          deviceId: actualDeviceId,
+          deviceName: device.device_name,
+          macAddress: device.mac_address,
+          logId: updatedLog.id,
+          status: updatedLog.status,
+          version,
+          error: updatedLog.error_message,
+          completedAt: updatedLog.completed_at,
+        };
+        
+        this.io.emit("firmware_update_status", eventData);
+        console.log(`[OTA] ✅ firmware_update_status emitted successfully with data:`, eventData);
+
+        // Log activity with more details
+        await this.prisma.activityLog.create({
+          data: {
+            device_id: actualDeviceId,
+            event_type: "FIRMWARE_UPDATE_COMPLETE",
+            description: `🔄 Firmware ${version} update ${
+              status === "success" ? "✅ SUCCESS" : "❌ FAILED"
+            }${error ? ` (Error: ${error})` : ""}`,
+          },
+        }).catch((err) =>
+          console.error("[OTA] Error creating activity log:", err),
+        );
+
+        // Log to console for verification
+        console.log(
+          `[OTA] ✅ Activity log created for device: ${device.device_name}`,
+        );
+      } else {
+        console.warn(
+          `[OTA] ⚠️ No firmware update log found for device ${device.device_name}, version ${version}`,
+        );
+      }
+    } catch (error) {
+      console.error(
+        `[OTA] Error handling firmware update status:`,
+        error,
+      );
+    }
+  }
+
+  /**
+   * Send control command to device
+   * Publish to air/control/{device_id} with payload: { "room": 1, "mode": "MANUAL", "fan": false, "buzzer": false, "window": 90 }
+   */
+  async sendCommand(deviceId, room, mode, fan, buzzer, window) {
     try {
       const client = this.clients.get(deviceId);
 
@@ -384,6 +534,14 @@ class MqttPool {
         mode: mode,
         fan: fan,
       };
+
+      // Add optional parameters if provided
+      if (typeof buzzer !== "undefined") {
+        payload.buzzer = buzzer;
+      }
+      if (typeof window !== "undefined") {
+        payload.window = window;
+      }
 
       const topics = [`air/control/${deviceId}`, "air/control"];
       for (const topic of topics) {

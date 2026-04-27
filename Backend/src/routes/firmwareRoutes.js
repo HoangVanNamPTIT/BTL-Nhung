@@ -40,8 +40,12 @@ const upload = multer({
 router.post("/upload", upload.single("firmwareFile"), firmwareController.uploadFirmware);
 router.get("/", firmwareController.getAllFirmware);
 router.get("/latest", firmwareController.getLatestFirmware);
+router.get("/status", firmwareController.getUpdateStatus); // Polling endpoint - BEFORE /:id route
 router.get("/download/:version", firmwareController.downloadFirmware);
 router.delete("/:id", firmwareController.deleteFirmware);
+router.patch("/:id", firmwareController.editFirmware);
+router.get("/:id/logs", firmwareController.getFirmwareUpdateLogs);
 router.post("/trigger-update", firmwareController.triggerOTAUpdate);
+router.post("/trigger-batch", firmwareController.triggerBatchOTAUpdate);
 
 module.exports = router;

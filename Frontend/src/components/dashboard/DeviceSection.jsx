@@ -4,7 +4,7 @@ import RoomCard from "./RoomCard";
 import api from "../../utils/api";
 
 const DeviceSection = memo(
-  ({ device, onModeChange, onFanChange, onDeviceUpdate }) => {
+  ({ device, onModeChange, onFanChange, onWindowChange, onBuzzerChange, onDeviceUpdate }) => {
     const isOnline = device.status === "ONLINE";
     const [editingDeviceName, setEditingDeviceName] = useState(false);
     const [newDeviceName, setNewDeviceName] = useState(device.name);
@@ -266,6 +266,8 @@ const DeviceSection = memo(
               isOnline={isOnline}
               onModeChange={(mode) => onModeChange(device.id, room.id, mode)}
               onFanChange={(fan) => onFanChange(device.id, room.id, fan)}
+              onWindowChange={(window) => onWindowChange(device.id, room.id, window)}
+              onBuzzerChange={(buzzer) => onBuzzerChange(device.id, room.id, buzzer)}
             />
           ))}
         </div>

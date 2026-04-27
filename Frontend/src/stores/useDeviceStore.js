@@ -291,6 +291,116 @@ export const useDeviceStore = create((set, get) => ({
     }
   },
 
+  setRoomWindow: async (deviceId, roomId, window) => {
+    console.log(
+      `[Store] 🪟 setRoomWindow called: deviceId=${deviceId}, roomId=${roomId}, window=${window}`,
+    );
+    const currentDevices = get().devices;
+    const activeDevice = currentDevices.find(
+      (device) => device.id === deviceId,
+    );
+    const activeRoom = activeDevice?.rooms.find((room) => room.id === roomId);
+
+    if (!activeRoom) {
+      console.error("[Store] ❌ Room not found");
+      return { success: false, error: "Room not found" };
+    }
+
+    if (activeRoom.mode === "AUTO") {
+      console.error("[Store] ❌ Cannot control window in AUTO mode");
+      return { success: false, error: "Switch to MANUAL to control" };
+    }
+
+    set((state) => ({
+      devices: state.devices.map((device) =>
+        device.id !== deviceId
+          ? device
+          : {
+              ...device,
+              rooms: device.rooms.map((room) =>
+                room.id === roomId ? { ...room, window } : room,
+              ),
+            },
+      ),
+    }));
+
+    try {
+      console.log("[Store] 🔄 Sending window control command to API...");
+      await api.post("/devices/control", {
+        deviceId,
+        room: activeRoom.roomIndex,
+        mode: activeRoom.mode,
+        fan: activeRoom.fan,
+        window,
+      });
+      console.log("[Store] ✅ Window adjusted successfully");
+      return { success: true };
+    } catch (err) {
+      console.error("[Store] ❌ Window control failed:", err.message);
+      set({ devices: currentDevices });
+      const message =
+        err.response?.data?.error ||
+        err.response?.data?.message ||
+        "Failed to update window";
+      return { success: false, error: message };
+    }
+  },
+
+  setRoomBuzzer: async (deviceId, roomId, buzzer) => {
+    console.log(
+      `[Store] 🔔 setRoomBuzzer called: deviceId=${deviceId}, roomId=${roomId}, buzzer=${buzzer}`,
+    );
+    const currentDevices = get().devices;
+    const activeDevice = currentDevices.find(
+      (device) => device.id === deviceId,
+    );
+    const activeRoom = activeDevice?.rooms.find((room) => room.id === roomId);
+
+    if (!activeRoom) {
+      console.error("[Store] ❌ Room not found");
+      return { success: false, error: "Room not found" };
+    }
+
+    if (activeRoom.mode === "AUTO") {
+      console.error("[Store] ❌ Cannot control buzzer in AUTO mode");
+      return { success: false, error: "Switch to MANUAL to control" };
+    }
+
+    set((state) => ({
+      devices: state.devices.map((device) =>
+        device.id !== deviceId
+          ? device
+          : {
+              ...device,
+              rooms: device.rooms.map((room) =>
+                room.id === roomId ? { ...room, buzzer } : room,
+              ),
+            },
+      ),
+    }));
+
+    try {
+      console.log("[Store] 🔄 Sending buzzer control command to API...");
+      await api.post("/devices/control", {
+        deviceId,
+        room: activeRoom.roomIndex,
+        mode: activeRoom.mode,
+        fan: activeRoom.fan,
+        buzzer,
+      });
+      console.log("[Store] ✅ Buzzer toggled successfully");
+      return { success: true };
+    } catch (err) {
+      console.error("[Store] ❌ Buzzer toggle failed:", err.message);
+      set({ devices: currentDevices });
+      const message =
+        err.response?.data?.error ||
+        err.response?.data?.message ||
+        "Failed to update buzzer";
+      return { success: false, error: message };
+    }
+  },
+
   appendActivity: (activity) => {
     set((state) => {
       const devices = state.devices;

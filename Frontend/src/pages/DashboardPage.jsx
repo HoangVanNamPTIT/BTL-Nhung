@@ -9,6 +9,7 @@ import { createSocketClient } from "../utils/socket";
 const DashboardPage = () => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [wizardOpen, setWizardOpen] = useState(false);
+  const [searchDeviceName, setSearchDeviceName] = useState("");
 
   const {
     devices,
@@ -20,6 +21,8 @@ const DashboardPage = () => {
     claimDevice,
     setRoomMode,
     setRoomFan,
+    setRoomWindow,
+    setRoomBuzzer,
     applyTelemetryUpdate,
     appendActivity,
     updateDeviceStatus,
@@ -134,6 +137,16 @@ const DashboardPage = () => {
 
   const hasDevices = useMemo(() => devices.length > 0, [devices]);
 
+  // Filter devices by name
+  const filteredDevices = useMemo(() => {
+    if (!searchDeviceName.trim()) {
+      return devices;
+    }
+    return devices.filter((device) =>
+      device.name.toLowerCase().includes(searchDeviceName.toLowerCase())
+    );
+  }, [devices, searchDeviceName]);
+
   const handleModeChange = async (deviceId, roomId, mode) => {
     console.log(
       `[Action] 🎛️ Changing mode - deviceId=${deviceId}, roomId=${roomId}, mode=${mode}`,
@@ -162,6 +175,36 @@ const DashboardPage = () => {
 
     console.log("[Action] ✅ Fan toggled successfully");
     toast.success(`Fan turned ${fan ? "ON" : "OFF"}`);
+  };
+
+  const handleWindowChange = async (deviceId, roomId, window) => {
+    console.log(
+      `[Action] 🪟 Adjusting window - deviceId=${deviceId}, roomId=${roomId}, window=${window}°`,
+    );
+    const result = await setRoomWindow(deviceId, roomId, window);
+    if (!result.success) {
+      console.error("[Action] ❌ Window adjustment failed:", result.error);
+      toast.error(result.error || "Failed to adjust window");
+      return;
+    }
+
+    console.log("[Action] ✅ Window adjusted successfully");
+    toast.success(`Window set to ${window}°`);
+  };
+
+  const handleBuzzerChange = async (deviceId, roomId, buzzer) => {
+    console.log(
+      `[Action] 🔔 Toggling buzzer - deviceId=${deviceId}, roomId=${roomId}, buzzer=${buzzer}`,
+    );
+    const result = await setRoomBuzzer(deviceId, roomId, buzzer);
+    if (!result.success) {
+      console.error("[Action] ❌ Buzzer toggle failed:", result.error);
+      toast.error(result.error || "Failed to toggle buzzer");
+      return;
+    }
+
+    console.log("[Action] ✅ Buzzer toggled successfully");
+    toast.success(`Buzzer turned ${buzzer ? "ON" : "OFF"}`);
   };
 
   const handleVerify = async ({ mac_address, claim_pin }) => {
@@ -221,6 +264,37 @@ const DashboardPage = () => {
             </div>
           )}
 
+          {/* Sticky Search Bar - Dưới Navbar */}
+          {hasDevices && (
+            <div className="sticky z-40 bg-white rounded-lg shadow mb-6 p-4" style={{ top: "56px" }}>
+              <div className="flex items-center gap-4">
+                <div className="flex-1">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    🔍 Tìm kiếm theo tên thiết bị
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="Nhập tên thiết bị (VD: Phòng khách, Phòng ngủ)..."
+                    value={searchDeviceName}
+                    onChange={(e) => setSearchDeviceName(e.target.value)}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                {searchDeviceName && (
+                  <button
+                    onClick={() => setSearchDeviceName("")}
+                    className="mt-6 px-4 py-2 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400 transition"
+                  >
+                    Xóa
+                  </button>
+                )}
+              </div>
+              <p className="text-xs text-gray-500 mt-2">
+                Tìm thấy: <span className="font-semibold text-blue-600">{filteredDevices.length}</span> thiết bị
+              </p>
+            </div>
+          )}
+
           {isLoading ? (
             <div className="flex h-64 items-center justify-center rounded-2xl border border-slate-200 bg-white/80">
               <Spinner size="lg" />
@@ -234,14 +308,25 @@ const DashboardPage = () => {
                 Click Add Device to start the onboarding wizard.
               </p>
             </div>
+          ) : filteredDevices.length === 0 ? (
+            <div className="rounded-2xl border border-slate-200 bg-white/70 py-14 text-center">
+              <p className="text-lg font-medium text-slate-700">
+                Không có thiết bị phù hợp.
+              </p>
+              <p className="text-sm text-slate-500">
+                Thử tìm kiếm lại với tên khác.
+              </p>
+            </div>
           ) : (
             <div className="space-y-5">
-              {devices.map((device) => (
+              {filteredDevices.map((device) => (
                 <DeviceSection
                   key={device.id}
                   device={device}
                   onModeChange={handleModeChange}
                   onFanChange={handleFanChange}
+                  onWindowChange={handleWindowChange}
+                  onBuzzerChange={handleBuzzerChange}
                   onDeviceUpdate={fetchDevices}
                 />
               ))}

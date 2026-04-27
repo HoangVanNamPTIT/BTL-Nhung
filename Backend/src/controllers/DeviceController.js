@@ -736,13 +736,13 @@ class DeviceController {
   }
 
   /**
-   * Send control command with payload: { deviceId, room, mode, fan }
+   * Send control command with payload: { deviceId, room, mode, fan, buzzer, window }
    */
   static async sendControl(req, res) {
     try {
-      const { deviceId, room, mode, fan } = req.body;
+      const { deviceId, room, mode, fan, buzzer, window } = req.body;
 
-      if (!deviceId || !room || !mode || typeof fan !== "boolean") {
+      if (!deviceId || room === undefined || !mode || typeof fan !== "boolean") {
         return res.status(400).json({
           error: "deviceId, room, mode and fan are required",
         });
@@ -813,7 +813,7 @@ class DeviceController {
 
       if (mqttPool) {
         try {
-          await mqttPool.sendCommand(deviceId, roomIndex, mode, fan);
+          await mqttPool.sendCommand(deviceId, roomIndex, mode, fan, buzzer, window);
         } catch (err) {
           console.error("MQTT send command error:", err.message);
           mqttError = err.message;
@@ -821,7 +821,18 @@ class DeviceController {
         }
       }
 
-      const description = `Control sent to ${roomEntity.room_name}: mode=${mode}, fan=${fan ? "ON" : "OFF"}`;
+      // Build description with all control parameters
+      let controlParts = [];
+      controlParts.push(`mode=${mode}`);
+      controlParts.push(`fan=${fan ? "ON" : "OFF"}`);
+      if (typeof buzzer !== "undefined") {
+        controlParts.push(`buzzer=${buzzer ? "ON" : "OFF"}`);
+      }
+      if (typeof window !== "undefined") {
+        controlParts.push(`window=${window}°`);
+      }
+
+      const description = `Control sent to ${roomEntity.room_name}: ${controlParts.join(", ")}`;
       await prisma.activityLog.create({
         data: {
           user_id: req.user.id,

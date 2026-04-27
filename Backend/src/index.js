@@ -14,15 +14,22 @@ const io = socketIo(server, {
       "http://localhost:3000",
       "http://localhost:5173",
       "http://localhost:5174",
+      "http://127.0.0.1:5173",
+      "http://127.0.0.1:5174",
     ],
     methods: ["GET", "POST"],
     credentials: true,
+    allowEIO3: true,
   },
+  transports: ["websocket", "polling"],
+  pingInterval: 25000,
+  pingTimeout: 60000,
 });
 
 const prisma = new PrismaClient();
 const mqttPool = new MqttPool(prisma, io);
 app.set("mqttPool", mqttPool);
+app.set("io", io); // Register io instance for test routes
 
 // Prevent "Do not know how to serialize a BigInt" when returning Prisma rows.
 app.set("json replacer", (key, value) =>
@@ -33,12 +40,20 @@ app.set("json replacer", (key, value) =>
 app.use(cors());
 app.use(express.json());
 
-// Socket.io connection
+console.log(`[Boot] ⏳ Socket.io initializing on default namespace...`);
+
+// Socket.io connection - ROOT namespace
 io.on("connection", (socket) => {
-  console.log("New client connected:", socket.id);
+  const connectedCount = Object.keys(io.sockets.sockets).length;
+  console.log(
+    `[Socket.io] ✅ New client connected on /: ${socket.id} (total: ${connectedCount})`,
+  );
 
   socket.on("disconnect", () => {
-    console.log("Client disconnected:", socket.id);
+    const remainingCount = Object.keys(io.sockets.sockets).length;
+    console.log(
+      `[Socket.io] ⚫ Client disconnected: ${socket.id} (remaining: ${remainingCount})`,
+    );
   });
 });
 
@@ -49,6 +64,7 @@ app.use("/api/rooms", require("./routes/rooms"));
 app.use("/api/telemetry", require("./routes/telemetry"));
 app.use("/api/activity", require("./routes/activity"));
 app.use("/api/firmware", require("./routes/firmwareRoutes"));
+app.use("/api/test", require("./routes/test")); // Test endpoints for debugging OTA
 
 // Health check
 app.get("/health", (req, res) => {
