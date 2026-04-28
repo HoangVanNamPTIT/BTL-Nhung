@@ -86,6 +86,9 @@ volatile bool flagResetI2C = false;
 // Các biến toàn cục quản lý OTA (NEW)
 volatile bool isUpdatingFirmware = false; 
 volatile bool otaSuccess = false;
+volatile bool flagRequestOTA = false; // Cờ báo hiệu có lệnh cập nhật
+char otaTargetUrl[256] = "";          // Mảng lưu URL tĩnh, không dùng con trỏ động
+
 
 // (NEW) Cờ hiệu cho ngắt (Interrupt)
 volatile bool flagTriggerR1 = false;
@@ -105,14 +108,19 @@ TaskHandle_t emergencyTaskHandle = NULL; // (NEW) Handle cho task xử lý khẩ
 volatile unsigned long last_interrupt_time = 0;
 const unsigned long DEBOUNCE_TIME = 250; // 250ms là khoảng thời gian an toàn
 
-
 /* ================= INTERRUPT SERVICE ROUTINES (ISR) ================= */
-// (NEW) Các hàm ngắt phản ứng tức thì khi nhấn nút
 void IRAM_ATTR isrR1() {
-  unsigned long interrupt_time = millis();
+  unsigned long interrupt_time = millis(); // Hoặc xTaskGetTickCountFromISR() để chuẩn RTOS
   if (interrupt_time - last_interrupt_time > DEBOUNCE_TIME && !isUpdatingFirmware) {
     flagTriggerR1 = true;
-    if(emergencyTaskHandle) vTaskNotifyGiveFromISR(emergencyTaskHandle, NULL);
+    if(emergencyTaskHandle) {
+      BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+      // Thông báo cho task và kiểm tra xem có cần chuyển ngữ cảnh không
+      vTaskNotifyGiveFromISR(emergencyTaskHandle, &xHigherPriorityTaskWoken);
+      if (xHigherPriorityTaskWoken == pdTRUE) {
+        portYIELD_FROM_ISR(); // Ép CPU nhảy sang Task Emergency NGAY LẬP TỨC
+      }
+    }
     last_interrupt_time = interrupt_time;
   }
 }
@@ -121,7 +129,13 @@ void IRAM_ATTR isrR2() {
   unsigned long interrupt_time = millis();
   if (interrupt_time - last_interrupt_time > DEBOUNCE_TIME && !isUpdatingFirmware) {
     flagTriggerR2 = true;
-    if(emergencyTaskHandle) vTaskNotifyGiveFromISR(emergencyTaskHandle, NULL);
+    if(emergencyTaskHandle) {
+      BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+      vTaskNotifyGiveFromISR(emergencyTaskHandle, &xHigherPriorityTaskWoken);
+      if (xHigherPriorityTaskWoken == pdTRUE) {
+        portYIELD_FROM_ISR();
+      }
+    }
     last_interrupt_time = interrupt_time;
   }
 }
@@ -130,7 +144,13 @@ void IRAM_ATTR isrAll() {
   unsigned long interrupt_time = millis();
   if (interrupt_time - last_interrupt_time > DEBOUNCE_TIME && !isUpdatingFirmware) {
     flagTriggerAll = true;
-    if(emergencyTaskHandle) vTaskNotifyGiveFromISR(emergencyTaskHandle, NULL);
+    if(emergencyTaskHandle) {
+      BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+      vTaskNotifyGiveFromISR(emergencyTaskHandle, &xHigherPriorityTaskWoken);
+      if (xHigherPriorityTaskWoken == pdTRUE) {
+        portYIELD_FROM_ISR();
+      }
+    }
     last_interrupt_time = interrupt_time;
   }
 }
@@ -254,13 +274,15 @@ void taskEmergency(void *pv) {
 /* ================= TASK: OTA UPDATE FIRMWARE (NEW) ================= */
 void taskOTA(void *pv) {
 
-  String url = *(String*)pv;
-  delete (String*)pv; // Giải phóng bộ nhớ con trỏ string được pass vào
+  // Dùng trực tiếp mảng char tĩnh toàn cục đã nhận từ Callback
+  String url = String(otaTargetUrl); 
 
   Serial.println("\n========== BẮT ĐẦU CẬP NHẬT OTA ==========");
-  isUpdatingFirmware = true; // Kích hoạt cờ ngắt để các task khác tự động nhường CPU và nhả Mutex
+  isUpdatingFirmware = true; 
 
-  // Đợi 2 giây để đảm bảo Control, Sensor và MQTT nhả toàn bộ Mutex và vào trạng thái yield
+  // [THÊM MỚI] Gỡ bỏ Task hiện tại và vô hiệu hóa các giám sát WDT có thể gây reset oan
+  esp_task_wdt_delete(NULL); 
+  
   vTaskDelay(2000 / portTICK_PERIOD_MS);
 
   // BƯỚC 1: XỬ LÝ NGOẠI LỆ AN TOÀN PHẦN CỨNG
@@ -598,13 +620,18 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
           return; // Thoát ngay, không tạo Task OTA
       }
 
+      // --- [SỬA LẠI] CHỈ NHẬN URL VÀ BẬT CỜ, KHÔNG TẠO TASK TRONG CALLBACK ---
       String url = doc["url"].as<String>();
       String version = doc.containsKey("version") ? doc["version"].as<String>() : "Unknown";
       targetVersion = version;
-      Serial.printf("[TASK: MQTT - IN] YÊU CẦU OTA! Phiên bản: %s\n", version.c_str());
-      String* urlPtr = new String(url);
-      BaseType_t xReturned = xTaskCreate(taskOTA, "OTA", 8192, (void*)urlPtr, 5, NULL);
-      if (xReturned != pdPASS) { delete urlPtr; }
+      
+      // Copy an toàn URL vào mảng toàn cục, giới hạn độ dài
+      strncpy(otaTargetUrl, url.c_str(), sizeof(otaTargetUrl) - 1);
+      otaTargetUrl[sizeof(otaTargetUrl) - 1] = '\0'; // Đảm bảo kết thúc chuỗi
+      
+      flagRequestOTA = true; // Báo hiệu cho loop() biết để tạo Task
+      Serial.printf("[TASK: MQTT - IN] ĐÃ NHẬN LỆNH OTA! Sẽ tiến hành an toàn...\n");
+
     }
     return; 
   }
@@ -684,6 +711,16 @@ void taskMQTT(void *pv) {
     esp_task_wdt_reset(); 
     
     if (isUpdatingFirmware) { vTaskDelay(1000 / portTICK_PERIOD_MS); continue; } 
+
+    // --- [THÊM MỚI] KHỐI KIỂM TRA VÀ KẾT NỐI LẠI WIFI ---
+    if (WiFi.status() != WL_CONNECTED) {
+      Serial.println("[WIFI] Mất kết nối! Đang thử reconnect...");
+      WiFi.disconnect();
+      WiFi.reconnect();
+      // Đợi 5 giây cho WiFi kết nối lại, tránh spam vòng lặp
+      vTaskDelay(5000 / portTICK_PERIOD_MS); 
+      continue; // Bỏ qua xử lý MQTT bên dưới nếu chưa có mạng
+    }
 
     if (xSemaphoreTake(mqttMutex, 5000 / portTICK_PERIOD_MS) == pdTRUE) {
       handleMqtt(); 
@@ -788,7 +825,6 @@ void setup() {
 
   // (NEW) KHỞI TẠO TASK XỬ LÝ KHẨN CẤP VỚI ĐỘ ƯU TIÊN CAO NHẤT (6)
   xTaskCreate(taskEmergency, "Emergency", 3072, NULL, 6, &emergencyTaskHandle);
-  
   xTaskCreate(taskControl, "Control", 3072, NULL, 4, &controlTaskHandle);
   xTaskCreate(taskSensor,  "Sensor",  2048, NULL, 3, NULL); 
   xTaskCreate(taskLCD,     "LCD",     2048, NULL, 2, NULL); 
@@ -804,6 +840,15 @@ void setup() {
 }
 
 void loop() {
+
   esp_task_wdt_reset(); 
+  
+  // Kiểm tra cờ OTA, nếu có yêu cầu thì khởi tạo Task một cách an toàn tại Core 1
+  if (flagRequestOTA && !isUpdatingFirmware) {
+    flagRequestOTA = false;
+    // Bỏ con trỏ pv, trực tiếp dùng biến toàn cục otaTargetUrl
+    xTaskCreate(taskOTA, "OTA", 8192, NULL, 5, NULL);
+  }
+
   vTaskDelay(1000 / portTICK_PERIOD_MS); 
 }
