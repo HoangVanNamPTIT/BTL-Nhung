@@ -1,1358 +1,836 @@
-# Air Quality Monitoring & Smart Control IoT System
+# Xây Dựng Hệ Thống Nhúng Giám Sát Chất Lượng Không Khí Đa Phòng
 
-**Hệ thống nhúng (Embedded IoT) tích hợp với khả năng hoạt động độc lập không cần internet**
-
-> 🔌 **Standalone-First Design**: Thiết bị ESP32 hoạt động **hoàn toàn độc lập** với chế độ AUTO tự động điều khiển cảm biến và thiết bị. Khi có WiFi, kết nối MQTT để **tùy chọn** trao đổi dữ liệu với cloud/backend.
+**Embedded IoT Air Quality Monitoring System with Multi-Room Support**
 
 ---
 
 ## 📋 Mục Lục
 
-1. [Tổng Quan](#tổng-quan-hệ-thống)
-2. [Kiến Trúc Hệ Thống](#kiến-trúc-hệ-thống)
-3. [Công Nghệ & Kỹ Thuật](#công-nghệ--kỹ-thuật-áp-dụng)
-4. [Stack Công Nghệ](#stack-công-nghệ)
-5. [Thành Phần Hệ Thống](#thành-phần-hệ-thống)
-6. [Cài Đặt & Chạy](#cài-đặt--chạy)
-7. [Tính Năng Chi Tiết](#tính-năng-chi-tiết)
-8. [Tài Liệu](#tài-liệu)
+1. [Tóm Tắt Dự Án](#tóm-tắt-dự-án)
+2. [Mục Tiêu & Phạm Vi](#mục-tiêu--phạm-vi)
+3. [Kiến Trúc Hệ Thống](#kiến-trúc-hệ-thống)
+4. [Yêu Cầu Hệ Thống](#yêu-cầu-hệ-thống)
+5. [Công Nghệ Áp Dụng](#công-nghệ-áp-dụng)
+6. [Stack Kỹ Thuật](#stack-kỹ-thuật)
+7. [Triển Khai Hệ Thống](#triển-khai-hệ-thống)
+8. [Hướng Dẫn Sử Dụng](#hướng-dẫn-sử-dụng)
+9. [Tài Liệu Tham Khảo](#tài-liệu-tham-khảo)
 
 ---
 
-## 🎯 Tổng Quan Hệ Thống
+## 1. Tóm Tắt Dự Án
 
-Hệ thống nhúng IoT hybrid cho quản lý chất lượng không khí với **hai chế độ hoạt động**:
+### 1.1 Mô Tả
 
-### **Chế độ Standalone (Offline) - Không cần Internet** ⚡
-Thiết bị ESP32 hoạt động **100% độc lập**:
-- ✅ Đọc cảm biến gas (ADS1115) liên tục
-- ✅ Xử lý dữ liệu và phân loại chất lượng không khí (GOOD/MOD/BAD/DANG)
-- ✅ **Tự động điều khiển** quạt, buzzer, cửa sổ dựa trên mức AQI (chế độ AUTO)
-- ✅ Nút khẩn cấp vật lý phản ứng ngay lập tức (< 100ms)
-- ✅ Hiển thị realtime trên LCD 16x2
-- ✅ **Không cần WiFi, không cần backend**
+Dự án này xây dựng một **hệ thống nhúng (embedded system)** cho phép giám sát chất lượng không khí trong môi trường đa phòng. Hệ thống được thiết kế theo mô hình **hybrid offline-first** với khả năng hoạt động độc lập hoàn toàn mà không cần kết nối internet, đồng thời hỗ trợ kết nối tùy chọn với cloud/backend khi có WiFi.
 
-### **Chế độ Connected (Online) - Có Internet** 🌐
-Khi kết nối WiFi + MQTT:
-- ✅ Tương tác với web dashboard (React/Vite)
-- ✅ Remote control từ web browser
-- ✅ Ghi nhận lịch sử data trên cloud
-- ✅ Update firmware OTA không cần USB
-- ✅ Real-time monitoring từ xa
-- ✅ Đồng bộ trạng thái thiết bị
+### 1.2 Đặc Điểm Nổi Bật
 
-### **Tính Năng Chung**
-✅ **Multi-room Support** - Quản lý 2 phòng độc lập  
-✅ **Dual-Mode Control** - AUTO (tự động) + MANUAL (điều khiển)  
-✅ **Advanced Synchronization** - FreeRTOS, Semaphores, Task Notifications  
-✅ **Emergency System** - Nút bấm độc lập không cần code chạy  
-✅ **State Persistence** - RTC backup memory giữ trạng thái qua reset  
-✅ **Security** - JWT auth, encrypted MQTT, bcrypt passwords
+- **Tự Động Độc Lập**: Hoạt động 100% tự động trong chế độ offline (không WiFi)
+- **Dual-Core Processing**: Tối ưu hóa hiệu năng bằng cách sử dụng 2 core của ESP32 (Core 0: Networking, Core 1: Computing)
+- **Real-Time Operating System**: Sử dụng FreeRTOS để quản lý 6 task độc lập
+- **Persistent State Management**: Lưu trạng thái thông qua RTC backup memory
+- **Failover Tự Động**: Tự động chuyển đổi giữa chế độ offline/online
+- **Remote Management**: Quản lý từ xa thông qua web dashboard khi có kết nối
+- **OTA Firmware Update**: Cập nhật firmware không cần USB khi kết nối MQTT
+
+### 1.3 Ứng Dụng
+
+- Hành lang, phòng khách, văn phòng
+- Bệnh viện, trường học, thư viện
+- Nhà thông minh, bảo tàng, nhà kho
+- Không gian công cộng cần giám sát không khí
 
 ---
 
-## 🏗️ Kiến Trúc Hệ Thống
+## 2. Mục Tiêu & Phạm Vi
 
-### **Standalone Mode (Offline - No WiFi)**
+### 2.1 Mục Tiêu
 
-```
-┌─────────────────────────────────────────────────────────┐
-│  ESP32 Device (Standalone Operation)                    │
-│  ⚡ 100% Independent - No WiFi Needed                   │
-├─────────────────────────────────────────────────────────┤
-│                                                         │
-│  Core 0 (WiFi)              Core 1 (Compute)          │
-│  ┌──────────────────────┐  ┌──────────────────────┐   │
-│  │ WiFi Task (Idle)     │  │ Sensor Task          │   │
-│  │ MQTT Task (Skipped)  │  │ ├─ Read ADS1115      │   │
-│  │                      │  │ ├─ Apply EMA filter  │   │
-│  │                      │  │ ├─ Classify AQI      │   │
-│  │                      │  │ └─ Update LCD        │   │
-│  └──────────────────────┘  │                      │   │
-│                            │ Control Task (AUTO)  │   │
-│                            │ ├─ Check AQI level   │   │
-│                            │ ├─ Auto-activate fan │   │
-│                            │ ├─ Ring buzzer       │   │
-│                            │ ├─ Open/close window │   │
-│                            │ └─ Execute actuators │   │
-│                            │                      │   │
-│                            │ Emergency Task       │   │
-│                            │ └─ Respond to buttons│   │
-│  └──────────────────────────────────────────────┘    │
-│                                                         │
-│  I2C Hardware                  GPIO Hardware            │
-│  ├─ ADS1115 (Sensors)         ├─ Relays (Fans)        │
-│  └─ LCD 16x2 (Display)        ├─ Buzzers               │
-│                               ├─ Servo Motors          │
-│                               └─ Emergency Buttons     │
-│                                                         │
-│  ✅ Automatically adjusts fan/window based on AQI      │
-│  ✅ LCD shows real-time status                         │
-│  ✅ Physical buttons work anytime                      │
-│  ✅ NO internet required                               │
-└─────────────────────────────────────────────────────────┘
-```
+**Chính:**
+- Xây dựng hệ thống nhúng có khả năng đo đạc chất lượng không khí độc lập
+- Cung cấp điều khiển thiết bị thông minh tự động dựa trên dữ liệu cảm biến
+- Đảm bảo hoạt động liên tục ngay cả khi mất kết nối internet
 
-### **Connected Mode (Online - With WiFi + MQTT)**
+**Phụ:**
+- Cung cấp giao diện web để quản lý từ xa (khi có WiFi)
+- Hỗ trợ cập nhật firmware không cần kết nối vật lý
+- Ghi nhận lịch sử hoạt động trên cloud
 
-```
-┌────────────────────────────────────────────────────────────────────┐
-│                    Frontend (React/Vite)                           │
-│              🌐 Dashboard | OTA | Remote Control                  │
-│                    http://localhost:5173                           │
-└─────────────────────┬──────────────────────────────────────────────┘
-                      │ HTTP + WebSocket
-                      ▼
-┌────────────────────────────────────────────────────────────────────┐
-│                    Backend (Express.js + Socket.io)                │
-│              API | MQTT Broker Client | Database                  │
-│                    http://localhost:5000                           │
-└──────┬──────────────────────────────────────────┬──────────────────┘
-       │                                          │
-       ▼ (MySQL)                        ▼ (MQTT 8883 - TLS)
-   ┌────────────┐                  ┌──────────────────────┐
-   │ MySQL DB   │                  │ HiveMQ Cloud Broker  │
-   │ + Prisma   │                  │ (MQTT 3.1.1/5.0)     │
-   └────────────┘                  └──────────┬───────────┘
-                                              │
-                                 ┌────────────┴────────────┐
-                                 │                         │
-                        ▼ (MQTT Subscribe)      ▼ (MQTT Publish)
-                   Commands from backend    Telemetry to backend
-                   Config updates           Status reports
-                   OTA firmware links       Device metrics
-                                 │                         │
-                    ┌────────────┴─────────────────┬──────┘
-                    │                              │
-        ┌───────────▼────────────────────────────▼─────────┐
-        │   ESP32 Device (Connected Mode)                  │
-        │   ⚡ Offline-capable + Cloud optional            │
-        ├────────────────────────────────────────────────────┤
-        │                                                    │
-        │  Core 0: MQTT                 Core 1: Compute    │
-        │  ├─ WiFi connect              ├─ Sensor read     │
-        │  ├─ MQTT publish              ├─ Data process    │
-        │  ├─ Receive commands          ├─ Control logic   │
-        │  └─ Handle OTA                ├─ Button handler  │
-        │                               └─ Actuator exec   │
-        │                                                    │
-        │  Key: Device still works if WiFi drops!          │
-        │  ✅ Falls back to standalone operation           │
-        │  ✅ Resumes cloud sync when WiFi returns         │
-        └────────────────────────────────────────────────────┘
-```
+### 2.2 Phạm Vi
 
-### **Chế độ Chuyển Đổi (Mode Switching)**
+**Được Bao Gồm:**
+- Hệ thống nhúng ESP32 (firmware, bootloader)
+- Backend Node.js + Express (API, MQTT, Database)
+- Frontend React + Vite (web dashboard)
+- Cơ sở dữ liệu MySQL
+- Tài liệu hướng dẫn triển khai
 
-```
-┌─────────────────────────────────────────────────────────┐
-│  WiFi Available?                                        │
-├─────────────────────────────────────────────────────────┤
-│                                                         │
-│  NO (Offline)                    YES (Online)          │
-│  ────────────────────────────────────────────          │
-│  • Sensor Task: Active           • Sensor Task: Active │
-│  • Control Task: Active (AUTO)   • Control Task: Active│
-│  • LCD Task: Active              • LCD Task: Active    │
-│  • MQTT Task: Skipped            • MQTT Task: Active   │
-│  • Local control only            • Remote + Local      │
-│  • Buttons work instantly        • Cloud sync enabled  │
-│  • NO data logging to DB         • Data logged to DB   │
-│  • NO web dashboard              • Web dashboard live  │
-│  • NO OTA updates                • OTA available       │
-│                                                         │
-│  🔄 Device automatically switches modes                 │
-│     - Detects WiFi drop → Falls back to offline        │
-│     - WiFi restored → Auto-sync with cloud             │
-│     - Users never notice interruption                  │
-└─────────────────────────────────────────────────────────┘
-```
+**Không Bao Gồm:**
+- Phần cứng (bạn cần mua ESP32, sensors, relays, etc.)
+- Mobile app (chỉ có web)
+- Hosting/server công cộng (hướng dẫn setup local)
 
 ---
 
-## 🔧 Công Nghệ & Kỹ Thuật Áp Dụng
+## 3. Kiến Trúc Hệ Thống
 
-### **Backend Architecture**
+### 3.1 Sơ Đồ Tổng Quan
 
-#### 1. **MQTT Communication Pattern (IoT Protocol)**
-- **Publish-Subscribe Model**: Thiết bị publish telemetry, backend subscribe nhận dữ liệu
-- **Topic Structure**:
-  ```
-  air/data/{device_id}          ← Device gửi dữ liệu cảm biến
-  air/updatefirmware            ← Backend gửi lệnh cập nhật
-  air/firmwareupdatestatus      ← Device báo kết quả cập nhật
-  ```
-- **Broker**: HiveMQ Cloud (MQTT 3.1.1 & 5.0) với TLS encryption
-
-#### 2. **Database Design với Prisma ORM**
-```prisma
-Models:
-├─ User: Quản lý tài khoản
-├─ Device: Lưu trữ thiết bị ESP32 (MAC, status, version)
-├─ UserDevice: Quan hệ many-to-many User ↔ Device
-├─ Room: Các phòng được quản lý trên mỗi device
-├─ TelemetryData: Lưu trữ time-series data (AQI, fan status)
-├─ Firmware: Lưu trữ firmware binaries với MD5 hash
-├─ FirmwareUpdateLog: Lịch sử cập nhật firmware
-└─ ActivityLog: Ghi nhận tất cả hành động người dùng
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│              Hệ Thống Nhúng Giám Sát Chất Lượng Không Khí           │
+│                                                                     │
+│  ┌────────────────────────────────────────────────────────────┐    │
+│  │  Chế Độ Offline (Không WiFi) - Hoạt động 100% độc lập    │    │
+│  ├────────────────────────────────────────────────────────────┤    │
+│  │                                                            │    │
+│  │  ESP32 Core 1 (Compute)           Phần Cứng              │    │
+│  │  ├─ Sensor Task                   ├─ ADS1115 (I2C)       │    │
+│  │  │  └─ Đọc ADC                    ├─ LCD 16x2 (I2C)      │    │
+│  │  │  └─ Áp dụng filter             ├─ Relay (GPIO)        │    │
+│  │  │  └─ Phân loại AQI              ├─ Buzzer (GPIO)       │    │
+│  │  │                                ├─ Servo (GPIO)        │    │
+│  │  ├─ Control Task                  └─ Button (GPIO)       │    │
+│  │  │  └─ Tự động điều khiển quạt                          │    │
+│  │  │  └─ Mở/đóng cửa sổ                                   │    │
+│  │  │  └─ Bật/tắt buzzer                                   │    │
+│  │  │                                                            │    │
+│  │  ├─ LCD Task                                                  │    │
+│  │  │  └─ Hiển thị trạng thái realtime                          │    │
+│  │  │                                                            │    │
+│  │  └─ Emergency Task                                            │    │
+│  │     └─ Xử lý nút bấm khẩn cấp                                │    │
+│  │                                                            │    │
+│  │  ✓ Hoạt động 24/7 không cần internet                         │    │
+│  │  ✓ LCD hiển thị tình trạng                                  │    │
+│  │  ✓ Nút bấm vật lý luôn hoạt động                            │    │
+│  │  ✓ RTC memory lưu trạng thái                                │    │
+│  │                                                            │    │
+│  └────────────────────────────────────────────────────────────┘    │
+│                                                                     │
+│  ┌────────────────────────────────────────────────────────────┐    │
+│  │  Chế Độ Online (Có WiFi + MQTT) - Bổ sung tính năng cloud│    │
+│  ├────────────────────────────────────────────────────────────┤    │
+│  │                                                            │    │
+│  │  ESP32 Core 0 (WiFi)                                         │    │
+│  │  ├─ MQTT Task                                                │    │
+│  │  │  ├─ Kết nối HiveMQ broker                                │    │
+│  │  │  ├─ Publish telemetry (10s)                              │    │
+│  │  │  └─ Subscribe commands                                   │    │
+│  │  │                                                            │    │
+│  │  ├─ OTA Task                                                 │    │
+│  │  │  ├─ Download firmware                                    │    │
+│  │  │  ├─ Verify MD5                                           │    │
+│  │  │  └─ Flash update                                         │    │
+│  │  │                                                            │    │
+│  │  Backend (Node.js)            Database                         │    │
+│  │  ├─ API Server                 └─ MySQL                       │    │
+│  │  ├─ MQTT Client Pool              ├─ User data               │    │
+│  │  ├─ Socket.io Server              ├─ Device data             │    │
+│  │  └─ File Handler                  ├─ Telemetry               │    │
+│  │                                    ├─ Activity logs           │    │
+│  │                                    └─ Firmware versions       │    │
+│  │                                                            │    │
+│  │  Frontend (React)                                            │    │
+│  │  ├─ Dashboard (monitoring)                                   │    │
+│  │  ├─ OTA Management (update)                                  │    │
+│  │  └─ Activity Feed (logs)                                     │    │
+│  │                                                            │    │
+│  │  ✓ Tất cả tính năng offline + cloud features                │    │
+│  │  ✓ Web dashboard realtime                                   │    │
+│  │  ✓ Remote control từ web                                    │    │
+│  │  ✓ OTA firmware updates                                     │    │
+│  │                                                            │    │
+│  └────────────────────────────────────────────────────────────┘    │
+│                                                                     │
+└─────────────────────────────────────────────────────────────────────┘
 ```
 
-#### 3. **Authentication & Security**
-- **JWT (JSON Web Tokens)**:
-  - Signed tokens có thời gian hết hạn
-  - Middleware authentication trên tất cả protected routes
-  - Token store trong React (Zustand)
-  
-- **Password Hashing**:
-  - bcryptjs với salt rounds (tối thiểu 10)
-  - Never store plain passwords
-  
-- **CORS & Rate Limiting**:
-  - Configured origins (localhost, staging, production)
-  - Preflight request handling
+### 3.2 Luồng Dữ Liệu Chế Độ Offline
 
-#### 4. **Real-time Communication (Socket.io)**
-```javascript
-Events:
-- connection/disconnect: Theo dõi client online
-- device:update: Broadcast cập nhật trạng thái device
-- telemetry:new: Gửi dữ liệu cảm biến real-time
-- firmware:progress: Theo dõi tiến độ OTA update
-- activity:log: Ghi nhận hành động live
+```
+Sensor ADC (ADS1115, kênh 0, 1)
+    ↓
+Sensor Task: Đọc giá trị thô
+    ↓
+EMA Filter: Làm mịn dữ liệu
+    ↓
+Classify: GOOD (AQI<50) | MOD (50-100) | BAD (100-150) | DANG (>150)
+    ↓
+Control Task: So sánh với ngưỡng
+    ↓
+Actuator Execution:
+├─ GPIO Relay: Bật/tắt quạt
+├─ GPIO Buzzer: Phát cảnh báo
+├─ PWM Servo: Điều chỉnh góc cửa
+└─ LCD: Hiển thị trạng thái
+    ↓
+RTC Memory: Lưu trạng thái (tồn tại qua reset)
 ```
 
-#### 5. **Firmware OTA (Over-The-Air Update)**
-```
-Flow:
-1. User upload .bin file → Backend lưu vào uploads/firmware/
-2. Backend tính MD5 hash của file
-3. Backend publish MQTT command với URL download
-4. ESP32 nhận → download file via HTTP
-5. ESP32 verify MD5 → flash update
-6. ESP32 reboot → send status back via MQTT
-7. Backend record update log + kiểm tra success/fail
-```
+### 3.3 Luồng Dữ Liệu Chế Độ Online
 
-#### 6. **Error Handling & Logging**
-- Try-catch wrappers cho tất cả async operations
-- Centralized error middleware
-- Console logs với timestamps và severity levels
-- Activity logs saved in database
-
-#### 7. **MQTT Client Pool Management**
 ```
-Connection Pattern:
-├─ One MQTT client per device
-├─ Auto-reconnect với exponential backoff
-├─ Graceful degradation on connection loss
-├─ Queue messages when offline
-└─ Sync when connection restored
+Device (offline processing) 
+    ↓
+MQTT Publish (10 giây): 
+  Topic: air/data/{device_id}
+  Payload: {mac, rooms[AQI, level], timestamp}
+    ↓
+HiveMQ Cloud Broker (TLS)
+    ↓
+Backend MQTT Client:
+  - Nhận dữ liệu
+  - Parse JSON
+  - Validate
+    ↓
+Database Insert:
+  - Telemetry records
+  - Activity logs
+    ↓
+Socket.io Broadcast:
+  - Thông báo connected clients
+    ↓
+Frontend Update:
+  - Chart updated
+  - Status changed
+  - Toast notification
 ```
 
 ---
 
-### **Hybrid Offline/Online Architecture**
+## 4. Yêu Cầu Hệ Thống
 
-Đây là điểm **nổi bật chính** của hệ thống - **device hoạt động độc lập hoàn toàn**:
+### 4.1 Phần Cứng (Hardware)
 
-#### **1. Chế Độ Standalone (Offline)**
+**Thiết Bị Chính:**
+- ESP32 Development Board (dual-core, 4MB PSRAM)
+- Bộ cảm biến MQ (MQ-7, MQ-9) hoặc tương đương
+- ADS1115 (ADC 16-bit, kênh I2C)
 
-```
-Sơ đồ Luồng Dữ Liệu:
+**Thiết Bị Điều Khiển:**
+- 2x Relay Module (220V, 10A) - điều khiển quạt
+- 2x SFM-27 Buzzer - cảnh báo
+- 2x SG90 Servo Motor - cửa sổ
+- 3x Push Button - khẩn cấp
 
-┌─────────────────────────────────────────────────────────┐
-│         ESP32 Core 1 (Compute Core)                     │
-├─────────────────────────────────────────────────────────┤
-│                                                         │
-│  Sensor Task (Chạy liên tục, độc lập)                 │
-│  ├─ Đọc ADC từ ADS1115 (kênh 0, 1)                    │
-│  ├─ Áp dụng EMA filter                                │
-│  ├─ Phân loại: GOOD/MOD/BAD/DANG                      │
-│  └─ Lưu giá trị vào RAM                               │
-│                                                         │
-│  ▼                                                      │
-│                                                         │
-│  Control Task (Chạy theo chu kỳ ~1000ms)             │
-│  ├─ Nếu chế độ AUTO:                                  │
-│  │  ├─ IF AQI > 150 → Bật quạt                       │
-│  │  ├─ IF AQI > 200 → Mở cửa sổ + bật còi             │
-│  │  ├─ IF AQI < 100 → Tắt quạt                       │
-│  │  └─ IF AQI < 80  → Đóng cửa sổ + tắt còi          │
-│  │                                                    │
-│  ├─ Nếu chế độ MANUAL:                                │
-│  │  └─ Thực hiện lệnh từ nút bấm hoặc LCD            │
-│  │                                                    │
-│  ├─ Check trạng thái khẩn cấp:                       │
-│  │  ├─ Bấm nút Room 1 → Bật những gì cần thiết       │
-│  │  ├─ Bấm nút Room 2 → Bật những gì cần thiết       │
-│  │  └─ Bấm nút All   → TOÀN BỘ bật lên              │
-│  │                                                    │
-│  ├─ Thực thi:                                         │
-│  │  ├─ GPIO 32/33 cho Relay (quạt)                   │
-│  │  ├─ GPIO 25/4 cho Buzzer (PWM)                    │
-│  │  ├─ GPIO 26/27 cho Servo (PWM)                    │
-│  │  └─ RTC backup để persist trạng thái              │
-│  │                                                    │
-│  └─ Ghi log vào RTC memory (không phải cloud)        │
-│                                                         │
-│  ▼                                                      │
-│                                                         │
-│  LCD Task (Liên tục)                                  │
-│  └─ Hiển thị trên LCD 16x2:                          │
-│     Line 1: "R1: GOOD [Fan:ON]"                      │
-│     Line 2: "R2: MOD  [Fan:OFF]"                      │
-│                                                         │
-│  ▼                                                      │
-│                                                         │
-│  Emergency Task (Chờ Interrupt)                       │
-│  ├─ Khi nút được bấm:                                 │
-│  │  ├─ Debounce 250ms                                │
-│  │  ├─ Bật buzzer ngay lập tức (< 100ms)             │
-│  │  ├─ Đóng cửa sổ                                   │
-│  │  └─ Set cờ emergency                              │
-│  │                                                    │
-│  └─ **KHÔNG cần code chạy, chỉ hardware interrupt**  │
-│                                                         │
-└─────────────────────────────────────────────────────────┘
+**Display & Communication:**
+- LCD 16x2 (I2C backpack, 0x27)
+- Module WiFi (built-in ESP32)
 
-**Đặc điểm Offline:**
-✅ Hoạt động 100% tự động sau khi nạp code
-✅ Không cần WiFi, không cần backend
-✅ Không cần internet để điều khiển
-✅ Nút bấm vật lý luôn có tác dụng ngay lập tức
-✅ LCD hiển thị tình trạng thực thời
-✅ Trạng thái được lưu trong RTC memory
-✅ Tiêu thụ điện năng thấp (Core 0 WiFi ngủ)
-✅ Phù hợp cho hành lang, phòng hoàn toàn offline
-```
+**Power Supply:**
+- 5V 2A adapter
 
-#### **2. Chế Độ Connected (Online)**
+### 4.2 Phần Mềm (Software)
 
-```
-Bổ Sung Khi Có WiFi:
+**Embedded:**
+- Arduino IDE / PlatformIO
+- ESP32 Board Support Package
+- FreeRTOS (bao gồm)
 
-┌─────────────────────────────────────────────────────────┐
-│         ESP32 Core 0 (WiFi Core)                        │
-├─────────────────────────────────────────────────────────┤
-│                                                         │
-│  MQTT Task (Khi WiFi OK)                              │
-│  ├─ Kết nối HiveMQ broker                             │
-│  ├─ Subscribe topic: air/updatefirmware               │
-│  ├─ Subscribe topic: air/control/{device_id}          │
-│  │                                                    │
-│  ├─ Publish hàng 10 giây:                             │
-│  │  └─ Topic: air/data/{device_id}                    │
-│  │     Payload: {                                     │
-│  │       "mac": "XX:XX:XX:XX:XX:XX",                 │
-│  │       "rooms": [                                   │
-│  │         {"index": 0, "aqi": 145, "level": "MOD"},  │
-│  │         {"index": 1, "aqi": 89, "level": "GOOD"}   │
-│  │       ],                                           │
-│  │       "timestamp": "2026-06-17T10:30:00Z"         │
-│  │     }                                              │
-│  │                                                    │
-│  ├─ Publish khi OTA thành công:                       │
-│  │  └─ Topic: air/firmwareupdatestatus               │
-│  │     {                                              │
-│  │       "mac_address": "XX:XX:XX:XX:XX:XX",         │
-│  │       "update": true,                              │
-│  │       "status": "success",                         │
-│  │       "version": "1.0.1"                           │
-│  │     }                                              │
-│  │                                                    │
-│  └─ **Khi WiFi mất → Tự động chuyển về Offline mode**│
-│                                                         │
-│  WiFi Failover:                                        │
-│  ├─ Phát hiện mất signal                              │
-│  ├─ Tự động ngủ Core 0                               │
-│  ├─ Core 1 (Sensor + Control) tiếp tục chạy         │
-│  ├─ LCD hiển thị "OFFLINE" icon                       │
-│  └─ Khi WiFi trở lại → Tự động sync dữ liệu          │
-│                                                         │
-└─────────────────────────────────────────────────────────┘
+**Backend:**
+- Node.js v18+
+- npm / yarn
+- MySQL 8.0+
 
-**Bổ Sung Khi Connected:**
-✅ Gửi dữ liệu lên cloud (HiveMQ)
-✅ Backend nhận, lưu vào MySQL
-✅ Web dashboard hiển thị live
-✅ Remote control từ web
-✅ OTA firmware updates
-✅ Ghi nhật ký hoạt động
-✅ Đồng bộ trạng thái
-```
+**Frontend:**
+- npm / yarn
+- Trình duyệt hiện đại (Chrome, Firefox, Safari)
 
-#### **3. Tính Năng Chuyên Biệt**
+### 4.3 Điều Kiện Môi Trường
 
-**Persistent State (RTC Backup Memory):**
-```c
-// Dữ liệu được lưu trong RTC memory - sống sót qua reset
-RTC_DATA_ATTR Mode savedMode[2];           // AUTO/MANUAL
-RTC_DATA_ATTR bool savedFan[2];            // Trạng thái quạt
-RTC_DATA_ATTR bool savedBuzzer[2];         // Trạng thái còi
-RTC_DATA_ATTR int savedWindowAngle[2];     // Góc cửa sổ
-RTC_DATA_ATTR bool savedEmergency[2];      // Cờ khẩn cấp
-RTC_DATA_ATTR bool wasResetByWDT;          // Được reset hay không
-
-// Thậm chí khi bị ngắt điện hoặc WDT reset, 
-// khi khởi động lại → device vẫn nhớ trạng thái cũ!
-```
-
-**Watchdog Timer (System Recovery):**
-```
-Nếu code bị hang (deadlock):
-├─ WDT tự động reset device
-├─ Device khởi động lại
-├─ Trạng thái được restore từ RTC
-├─ Quay trở lại hoạt động bình thường
-└─ Đảm bảo không bao giờ "chết" vĩnh viễn
-```
+- Chế độ Standalone: Không cần kết nối
+- Chế độ Online: WiFi 802.11n, MQTT Broker (HiveMQ Cloud hoặc local)
 
 ---
 
-### **Frontend Architecture**
+## 5. Công Nghệ Áp Dụng
 
-#### 1. **State Management (Zustand)**
-```javascript
-Stores:
-├─ useAuthStore: JWT token, user info, login/logout
-├─ useDeviceStore: Devices list, current device, room data
-└─ Socket.io listeners: Real-time data updates
+### 5.1 Embedded Systems
+
+#### **FreeRTOS (Real-Time Operating System)**
+
+6 tasks độc lập chạy song song:
+
+```
+┌─────────────────────────────────────────────┐
+│  ESP32 Dual-Core Architecture               │
+├─────────────────────────────────────────────┤
+│  Core 0 (WiFi)                Core 1 (Main) │
+│  └─ WiFi Task (Skipped         └─ 5 tasks   │
+│     khi offline)                  ├─ Sensor │
+│                                    ├─ Control
+│                                    ├─ LCD
+│                                    ├─ Emergency
+│                                    └─ OTA
+│                                       (on-demand)
+└─────────────────────────────────────────────┘
 ```
 
-#### 2. **Component Architecture**
-```
-App (Router)
-├─ LoginPage (Public)
-├─ DashboardPage (Protected)
-│  ├─ Navbar (Navigation)
-│  ├─ Sidebar (Device list)
-│  ├─ DeviceSection
-│  │  ├─ RoomCard (Per-room monitoring)
-│  │  └─ Sparkline (Trend chart)
-│  ├─ OnboardingWizardModal (Device claiming)
-│  └─ ActivityFeed (Live logs)
-└─ OTAManagement (Protected)
-   ├─ FirmwareUpload Modal
-   ├─ TriggerOTA Modal
-   ├─ Firmware Version List
-   └─ Update Status Tracker
-```
+**Priority Scheduling:**
+- Emergency Task: Priority 6 (Cao nhất)
+- OTA Task: Priority 5 (Ad-hoc)
+- Control Task: Priority 4
+- Sensor Task: Priority 3
+- LCD Task: Priority 2
+- MQTT Task: Priority 1
 
-#### 3. **Real-time Updates**
-```javascript
-Socket.io listeners:
-- Receive telemetry data ngay lập tức
-- Update device status without page reload
-- Display firmware update progress
-- Live activity feed
-```
+#### **Synchronization Mechanisms**
 
-#### 4. **API Client Pattern**
-```javascript
-// utils/api.js: Axios instance với JWT interceptor
-- Auto add Authorization header
-- Handle 401 Unauthorized → redirect login
-- Error toast notifications
-```
+**Semaphores (Mutex):**
+- `dataMutex`: Bảo vệ mảng `rooms[]` (chia sẻ giữa 4 tasks)
+- `i2cMutex`: Bảo vệ I2C bus (ADS1115 + LCD cùng bus)
+- `mqttMutex`: Bảo vệ MQTT library (không thread-safe)
 
-#### 5. **UI/UX Features**
-- **Tailwind CSS**: Utility-first CSS framework
-- **Responsive Design**: Mobile-first approach
-- **Toast Notifications**: sonner library
-- **Loading States**: Spinner component
-- **Charts**: Recharts for trend visualization
-- **Animations**: Framer Motion for smooth transitions
+**Task Notifications:**
+- Đánh thức Emergency Task ngay khi nút bấm được kích
+- Thay vì chờ timeout, task thức dậy < 100ms
 
----
-
-### **Embedded Firmware (ESP32 + Arduino)**
-
-#### 1. **Real-Time Operating System (FreeRTOS)**
-
-Firmware chạy 6 task độc lập trên 2 cores của ESP32:
+#### **Interrupt Service Routines (ISR)**
 
 ```c
-Task Architecture:
-┌─────────────────────────────────────┐
-│ Core 0 (Networking)                 │
-├─────────────────────────────────────┤
-│ • MQTT Task (Priority 1)            │
-│   - Connect/Reconnect broker        │
-│   - Publish telemetry data          │
-│   - Subscribe to commands           │
-│                                     │
-│ • LCD Task (Priority 2)             │
-│   - Display real-time sensor data   │
-│   - Show device status              │
-│   - I2C communication               │
-└─────────────────────────────────────┘
-
-┌─────────────────────────────────────┐
-│ Core 1 (Computation)                │
-├─────────────────────────────────────┤
-│ • Sensor Task (Priority 3)          │
-│   - Read ADS1115 ADC data           │
-│   - Process MQ sensor values        │
-│   - Apply EMA (Exponential Moving   │
-│     Average) filter                 │
-│   - Determine air quality level     │
-│                                     │
-│ • Control Task (Priority 4)         │
-│   - Execute fan, buzzer, servo      │
-│   - Mode management (AUTO/MANUAL)   │
-│   - Device state synchronization    │
-│                                     │
-│ • OTA Task (Priority 5) [Ad-hoc]    │
-│   - Download firmware via HTTP      │
-│   - MD5 verification                │
-│   - Flash update                    │
-│                                     │
-│ • Emergency Task (Priority 6)       │
-│   - Handle button interrupts        │
-│   - Activate emergency mode         │
-│   - Ring buzzer + close window      │
-└─────────────────────────────────────┘
-```
-
-#### 2. **Synchronization Mechanisms (FreeRTOS)**
-
-**a) Semaphores (Binary & Counting)**
-```c
-// Protect shared data access
-SemaphoreHandle_t dataMutex;    // rooms[] array
-SemaphoreHandle_t i2cMutex;     // I2C bus (ADS1115 + LCD)
-SemaphoreHandle_t mqttMutex;    // MQTT library (not thread-safe)
-
-// Usage pattern:
-if (xSemaphoreTake(i2cMutex, portMAX_DELAY)) {
-  // Critical section - chỉ 1 task được vào
-  ads.readADC_SingleEnded(0);
-  xSemaphoreGive(i2cMutex);    // Release for other tasks
-}
-```
-
-**b) Task Notifications (Inter-Task Signaling)**
-```c
-// Event-driven synchronization, faster than delay
-// Sensor task detects danger:
-xTaskNotifyGive(controlTaskHandle);
-
-// Control task waits for notification:
-ulTaskNotifyTake(pdTRUE, 1500 / portTICK_PERIOD_MS);
-// Thức dậy ngay khi nhận notification, không chờ timeout
-```
-
-#### 3. **Interrupt Handling & Debouncing**
-
-```c
-// Hardware button interrupts with debounce logic
 void IRAM_ATTR isrEmergency() {
-  static unsigned long last_interrupt_time = 0;
-  unsigned long interrupt_time = millis();
-  
-  // Debounce: Only process if > 250ms since last interrupt
-  // Prevents multiple triggers from switch bounce
-  if (interrupt_time - last_interrupt_time > DEBOUNCE_TIME) {
+  // Debounce: 250ms
+  if (interrupt_time - last_interrupt_time > 250) {
     flagEmergency = true;
     vTaskNotifyGiveFromISR(emergencyTaskHandle, NULL);
-    last_interrupt_time = interrupt_time;
   }
 }
-
-// ISR must be in IRAM (fast RAM) and very short
-// Heavy processing deferred to task
 ```
 
-**Why Debounce?**
-- Mechanical switches bounce (make/break contacts multiple times)
-- 250ms is typical stabilization time
-- Prevents false emergency triggers
-
-#### 4. **Data Filtering & Processing**
+#### **Data Processing**
 
 **EMA (Exponential Moving Average) Filter:**
-```c
-// Smooth noisy sensor readings
-float alpha = 0.2f;  // Smoothing factor (0-1)
-filtered = alpha * raw + (1 - alpha) * filtered;
+```
+filtered = α × raw + (1-α) × filtered_prev
 
-// Benefits:
-// - Reduces sensor noise without delay
-// - Responsive to actual changes
-// - CPU efficient
+α = 0.2 (smoothing factor)
+- Giảm noise từ cảm biến
+- Phản ứng nhanh với thay đổi thực
+- CPU efficient
 ```
 
-#### 5. **Hardware Control Pattern**
+#### **Watchdog Timer (WDT)**
+
+- Tự động reset nếu code hang
+- Khôi phục từ RTC backup state
+- Đảm bảo system recovery
+
+#### **RTC Backup Memory**
 
 ```c
-// Target vs Current State
-struct Room {
-  // Sensor data
-  int raw;           // Raw ADC value
-  float filtered;    // After EMA filter
-  const char* level; // GOOD/MOD/BAD/DANG
-  
-  // Target state (from backend command)
-  bool targetFan;
-  bool targetBuzzer;
-  int targetWindowAngle;
-  
-  // Current hardware state
-  bool currentFan;
-  bool currentBuzzer;
-  int currentWindowAngle;
-  
-  // Control mode
-  Mode mode;         // AUTO or MANUAL
-  bool isEmergency;  // Emergency flag
-};
+RTC_DATA_ATTR Mode savedMode[2];
+RTC_DATA_ATTR bool savedFan[2];
+RTC_DATA_ATTR bool savedEmergency[2];
+// Tồn tại qua: Software reset, WDT reset
+// Mất khi: Deep sleep, power loss (không pin)
+```
 
-// Synchronous actuator updates
-void executeActuators(int room) {
-  executeFan(room);      // GPIO relay control
-  executeBuzzer(room);   // GPIO buzzer control
-  executeWindow(room);   // PWM servo control
+### 5.2 Backend Architecture
+
+#### **MQTT Protocol**
+
+**Topics:**
+- `air/data/{device_id}` - Device publish telemetry
+- `air/updatefirmware` - Backend send OTA command
+- `air/firmwareupdatestatus` - Device report OTA result
+
+**Payload Format (Telemetry):**
+```json
+{
+  "mac_address": "AA:BB:CC:DD:EE:FF",
+  "rooms": [
+    {
+      "index": 0,
+      "raw_aqi": 145,
+      "level": "MOD",
+      "fan_on": true,
+      "window_angle": 90
+    },
+    {
+      "index": 1,
+      "raw_aqi": 89,
+      "level": "GOOD",
+      "fan_on": false,
+      "window_angle": 0
+    }
+  ],
+  "timestamp": "2026-06-17T10:30:00Z",
+  "fw_version": "1.0.1"
 }
 ```
 
-#### 6. **OTA Firmware Update**
+#### **REST API Endpoints**
 
-```c
-// Complete OTA flow:
+```
+POST   /api/auth/register           - User registration
+POST   /api/auth/login              - User login
+POST   /api/auth/logout             - User logout
 
-1. MQTT Command Reception:
-   Topic: air/updatefirmware
-   Payload: { "url": "http://...", "version": "1.0.1" }
+GET    /api/devices                 - List user devices
+POST   /api/devices/claim           - Claim device via PIN
+GET    /api/devices/:id/status      - Get device status
 
-2. Download & Verify:
-   - HTTPClient download from URL
-   - Calculate MD5 on-the-fly
-   - Compare with expected hash
+GET    /api/telemetry/latest        - Latest sensor data
+GET    /api/telemetry/history       - Historical data
 
-3. Flash Update:
-   - Use Update.h library (OTA bootloader support)
-   - Partition switching (main ↔ OTA partition)
-   - Automatic reboot after success
+GET    /api/activity/logs           - Activity logs
 
-4. Status Report:
-   Topic: air/firmwareupdatestatus
-   Payload: {
-     "mac_address": "XX:XX:XX:XX:XX:XX",
-     "update": true,
-     "status": "success",
-     "version": "1.0.1"
-   }
+POST   /api/firmware/upload         - Upload firmware
+GET    /api/firmware/list           - List firmwares
+GET    /api/firmware/download/:ver  - Download firmware
+POST   /api/firmware/trigger        - Trigger OTA update
+GET    /api/firmware/status         - OTA status
 ```
 
-#### 7. **Watchdog Timer (WDT)**
+#### **Database Schema**
 
-```c
-// Prevent firmware hanging/deadlock
-esp_task_wdt_add(NULL);       // Add main task to WDT
-esp_task_wdt_reset();         // Pet the dog regularly
+```sql
+Users
+├─ user_id (PK)
+├─ email
+├─ password_hash
+└─ created_at
 
-// If task doesn't reset WDT in X seconds → auto reboot
-// Ensures system recovery from hang situations
+Devices
+├─ device_id (PK)
+├─ mac_address (UNIQUE)
+├─ device_name
+├─ status (ONLINE/OFFLINE)
+├─ firmware_version
+└─ created_at
+
+Rooms
+├─ room_id (PK)
+├─ device_id (FK)
+├─ room_index
+├─ room_name
+├─ current_mode (AUTO/MANUAL)
+└─ created_at
+
+TelemetryData
+├─ id (PK)
+├─ room_id (FK)
+├─ aqi_raw
+├─ aqi_level
+├─ fan_status
+├─ timestamp (indexed)
+└─ INDEX(room_id, timestamp)
+
+FirmwareUpdateLog
+├─ id (PK)
+├─ device_id (FK)
+├─ firmware_version (FK)
+├─ status (pending/in_progress/success/failed)
+├─ started_at
+├─ completed_at
+└─ error_message
 ```
 
-#### 8. **RTC (Real-Time Clock) Backup Memory**
+#### **Authentication & Security**
 
-```c
-// Persist critical data across resets
-RTC_DATA_ATTR Mode savedMode[ROOM_COUNT];
-RTC_DATA_ATTR bool savedEmergency[ROOM_COUNT];
-RTC_DATA_ATTR bool wasResetByWDT;
+- **JWT (JSON Web Tokens)**:
+  - Signed with HS256
+  - TTL: 24 hours
+  - Refresh token mechanism
 
-// survives:
-// - Software resets
-// - WDT resets
-// - Power cycles (with RTC battery)
-// Lost only on: Deep sleep, complete power loss
+- **Password Hashing**:
+  - bcryptjs, salt rounds ≥ 10
+  - Never stored in plaintext
+
+- **MQTT Security**:
+  - TLS 1.2+ (port 8883)
+  - Username/password auth
+  - Certificate validation
+
+### 5.3 Frontend Architecture
+
+#### **State Management (Zustand)**
+
+```javascript
+useAuthStore
+├─ token
+├─ user
+├─ login()
+├─ logout()
+└─ setToken()
+
+useDeviceStore
+├─ devices[]
+├─ currentDevice
+├─ rooms[]
+├─ addDevice()
+├─ updateRoom()
+└─ syncWithSocket()
+```
+
+#### **Real-Time Updates (Socket.io)**
+
+```javascript
+Events:
+- connection           : Client connected
+- device:update        : Device status changed
+- telemetry:new        : New sensor data
+- firmware:progress    : OTA update progress
+- activity:log         : Activity logged
+```
+
+#### **UI Components**
+
+```
+App
+├─ Router
+│  ├─ /login         → LoginPage
+│  ├─ /dashboard     → DashboardPage
+│  │  ├─ Navbar
+│  │  ├─ Sidebar (device list)
+│  │  ├─ RoomCard[] (per-room monitoring)
+│  │  └─ ActivityFeed
+│  └─ /ota           → OTAManagement
+│     ├─ FirmwareUpload
+│     ├─ TriggerUpdate
+│     └─ UpdateStatus
 ```
 
 ---
 
-## 💻 Stack Công Nghệ
+## 6. Stack Kỹ Thuật
 
-### **Backend**
+### 6.1 Backend
+
 | Công Nghệ | Phiên Bản | Mục Đích |
 |-----------|----------|---------|
 | Node.js | v18+ | JavaScript runtime |
 | Express.js | 5.2.1 | Web framework |
-| Prisma | 6.19.3 | ORM & database migration |
-| MySQL | 8.0+ | Relational database |
-| MQTT | 5.15.1 | IoT messaging protocol |
-| Socket.io | 4.8.3 | Real-time bidirectional communication |
-| JWT | 9.0.3 | Token-based authentication |
+| Prisma | 6.19.3 | ORM & migrations |
+| MySQL | 8.0+ | Database |
+| MQTT | 5.15.1 | IoT messaging |
+| Socket.io | 4.8.3 | Real-time communication |
+| JWT | 9.0.3 | Authentication |
 | bcryptjs | 3.0.3 | Password hashing |
-| Multer | 2.1.1 | File upload handling |
 
-### **Frontend**
+### 6.2 Frontend
+
 | Công Nghệ | Phiên Bản | Mục Đích |
 |-----------|----------|---------|
 | React | 19.2.5 | UI library |
-| Vite | 5.4.10 | Build tool & dev server |
-| React Router | 7.14.1 | Client-side routing |
+| Vite | 5.4.10 | Build tool |
+| React Router | 7.14.1 | Routing |
 | Zustand | 5.0.12 | State management |
 | Axios | 1.15.1 | HTTP client |
-| Tailwind CSS | 4.2.3 | Utility-first CSS |
-| Socket.io Client | 4.8.3 | Real-time communication |
-| Recharts | 3.8.1 | Data visualization |
-| Framer Motion | 12.38.0 | Animation library |
-| Sonner | 2.0.7 | Toast notifications |
+| Tailwind CSS | 4.2.3 | Styling |
+| Socket.io-client | 4.8.3 | Real-time |
+| Recharts | 3.8.1 | Charts |
 
-### **Embedded (ESP32)**
+### 6.3 Embedded
+
 | Công Nghệ | Mục Đích |
 |-----------|---------|
-| Arduino IDE / PlatformIO | Development environment |
-| FreeRTOS | Real-time multitasking |
-| WiFi (802.11n) | Network connectivity |
-| I2C Protocol | ADS1115 & LCD communication |
-| MQTT Protocol | Device ↔ Backend communication |
-| OTA Bootloader | Firmware update support |
-| PWM | Servo motor control |
-| ADC 16-bit (ADS1115) | Precision sensor reading |
+| Arduino IDE / PlatformIO | Development |
+| FreeRTOS | Real-time OS |
+| WiFi 802.11n | Networking |
+| MQTT Protocol | Device communication |
+| I2C Protocol | ADS1115 & LCD |
+| OTA Bootloader | Firmware updates |
+| PWM | Servo control |
 
 ---
 
-## 📦 Thành Phần Hệ Thống
+## 7. Triển Khai Hệ Thống
 
-### **1. Backend (Node.js Express Server)**
-
-**Cấu trúc thư mục:**
-```
-Backend/
-├── src/
-│   ├── index.js                     # Server entry point, MQTT init
-│   ├── controllers/
-│   │   ├── AuthController.js        # User login/register/logout
-│   │   ├── DeviceController.js      # Device claiming & management
-│   │   ├── RoomController.js        # Room control & status
-│   │   ├── TelemetryController.js   # Sensor data fetching
-│   │   ├── ActivityController.js    # Activity logs retrieval
-│   │   └── firmwareController.js    # Firmware upload/download/OTA
-│   ├── services/
-│   │   └── MqttPool.js              # MQTT client pool & handlers
-│   ├── routes/
-│   │   ├── auth.js                  # POST /api/auth/*
-│   │   ├── devices.js               # CRUD /api/devices
-│   │   ├── rooms.js                 # GET /api/rooms
-│   │   ├── telemetry.js             # GET /api/telemetry/latest
-│   │   ├── activity.js              # GET /api/activity/logs
-│   │   ├── firmwareRoutes.js        # OTA endpoints
-│   │   └── test.js                  # Debug endpoints
-│   ├── middleware/
-│   │   └── auth.js                  # JWT verification middleware
-│   └── utils/
-│       └── jwt.js                   # Token sign/verify utilities
-├── prisma/
-│   ├── schema.prisma                # Database models definition
-│   └── migrations/                  # Database schema versions
-├── config/
-│   └── ota.config.js                # OTA server URL config
-├── uploads/firmware/                # Firmware file storage
-├── .env                             # Environment variables
-└── package.json                     # Dependencies
-
-API Endpoints (50+):
-├─ Auth: POST /api/auth/register, /login, /logout
-├─ Devices: GET/POST/DELETE /api/devices, /claim, /status
-├─ Rooms: GET /api/rooms/:device_id
-├─ Telemetry: GET /api/telemetry/latest, /history
-├─ Activity: GET /api/activity/logs
-├─ Firmware: POST /api/firmware/upload, GET /download/:version
-└─ OTA: POST /api/firmware/trigger-update, /status
-
-Database: MySQL 8.0+ với 10 models (User, Device, Room, TelemetryData, etc.)
-Real-time: Socket.io events (device:update, telemetry:new, firmware:progress)
-```
-
-### **2. Frontend (React Vite SPA)**
-
-**Cấu trúc thư mục:**
-```
-Frontend/
-├── src/
-│   ├── App.jsx                      # Main app component + routing
-│   ├── main.jsx                     # React entry point
-│   ├── pages/
-│   │   ├── LoginPage.jsx            # Authentication page
-│   │   ├── DashboardPage.jsx        # Main dashboard
-│   │   └── OTAManagement.jsx        # Firmware update management
-│   ├── components/
-│   │   ├── common/
-│   │   │   ├── Button.jsx           # Reusable button component
-│   │   │   ├── Input.jsx            # Form input component
-│   │   │   ├── Modal.jsx            # Generic modal wrapper
-│   │   │   ├── Spinner.jsx          # Loading spinner
-│   │   │   ├── Toast.jsx            # Toast notifications
-│   │   │   └── ...
-│   │   ├── layout/
-│   │   │   ├── Navbar.jsx           # Top navigation bar
-│   │   │   ├── Sidebar.jsx          # Device list sidebar
-│   │   │   └── ActivityFeed.jsx     # Live activity log
-│   │   └── dashboard/
-│   │       ├── DeviceSection.jsx    # Device display section
-│   │       ├── RoomCard.jsx         # Per-room monitoring card
-│   │       ├── Sparkline.jsx        # Mini trend chart
-│   │       └── OnboardingWizardModal.jsx
-│   ├── hooks/
-│   │   ├── useAuth.js               # Authentication hook
-│   │   ├── useDevice.js             # Device data hook
-│   │   └── useFirmwareUpdateListener.js
-│   ├── stores/
-│   │   ├── useAuthStore.js          # Zustand auth store
-│   │   └── useDeviceStore.js        # Zustand device store
-│   ├── api/
-│   │   └── firmware.js              # Firmware API calls
-│   ├── utils/
-│   │   ├── api.js                   # Axios instance + interceptors
-│   │   ├── ProtectedRoute.jsx       # Route guard component
-│   │   └── socket.js                # Socket.io initialization
-│   ├── styles/
-│   │   ├── index.css                # Global styles
-│   │   ├── ota.css                  # OTA page styles
-│   │   └── App.css                  # App styles
-│   └── assets/                      # Images, icons
-├── public/                          # Static assets
-├── vite.config.js                   # Vite configuration
-├── tailwind.config.js               # Tailwind CSS setup
-├── postcss.config.js                # PostCSS for Tailwind
-├── index.html                       # HTML entry point
-├── package.json                     # Dependencies
-└── eslint.config.js                 # Linting rules
-
-Pages:
-├─ /login: Authentication page
-├─ /: Dashboard (device list, real-time monitoring)
-└─ /ota: Firmware management (upload, trigger updates)
-
-State Management: Zustand stores for Auth & Devices
-Real-time: Socket.io listeners for telemetry updates
-Styling: Tailwind CSS + custom CSS modules
-```
-
-### **3. Arduino Firmware (ESP32)**
-
-**File chính:**
-```
-Arduino/newestVersion.ino (2000+ lines)
-
-Sections:
-├─ WiFi & MQTT Configuration
-│  ├─ SSID, password
-│  ├─ HiveMQ broker credentials
-│  └─ Client ID generation from MAC
-│
-├─ Hardware Pin Mapping
-│  ├─ I2C: SDA=21, SCL=22
-│  ├─ GPIO: Relay, Buzzer, Servo, Button pins
-│  └─ ADS1115 channels (0, 1) for MQ sensors
-│
-├─ FreeRTOS Task Definitions (6 tasks)
-│  ├─ MQTTTask: Broker communication
-│  ├─ LCDTask: Display management
-│  ├─ SensorTask: ADC reading & filtering
-│  ├─ ControlTask: Actuator control
-│  ├─ OTATask: Firmware update
-│  └─ EmergencyTask: Button handling
-│
-├─ Synchronization Primitives
-│  ├─ Semaphores (dataMutex, i2cMutex, mqttMutex)
-│  ├─ Task notifications
-│  └─ Interrupt handlers with debounce
-│
-├─ Device Control
-│  ├─ Fan control (relay GPIO)
-│  ├─ Buzzer alert (PWM GPIO)
-│  ├─ Window servo (0-180°)
-│  └─ Mode management (AUTO/MANUAL)
-│
-├─ OTA Firmware Update
-│  ├─ HTTP download handler
-│  ├─ MD5 verification
-│  ├─ Partition switching
-│  └─ Status reporting
-│
-└─ Utility Functions
-   ├─ WiFi connection manager
-   ├─ MQTT connection/reconnect
-   ├─ Data filtering (EMA)
-   ├─ Emergency mode logic
-   └─ Watchdog management
-
-Core Features:
-- Dual-core utilization (Core 0: Networking, Core 1: Compute)
-- 6 independent tasks with priority-based scheduling
-- Thread-safe data access with semaphores
-- Event-driven architecture with task notifications
-- Button debouncing (250ms)
-- RTC backup memory for state persistence
-- Watchdog timer for system recovery
-- Dynamic MAC-based device identification
-```
-
----
-
-## 🚀 Cài Đặt & Chạy
-
-### **A. Prerequisites**
+### 7.1 Bước 1: Chuẩn Bị Phần Cứng
 
 ```bash
-# System Requirements
-- Node.js v18+
-- npm hoặc yarn
-- MySQL 8.0+ (hoặc Docker)
-- Arduino IDE hoặc PlatformIO
-- ESP32 development board
-- Python 3.7+ (cho PlatformIO)
+# Danh sách linh kiện
+- ESP32 Dev Board
+- ADS1115 (I2C ADC)
+- LCD 16x2 (I2C)
+- 2x Relay Module
+- 2x Buzzer
+- 2x Servo Motor
+- 3x Push Button
+- Dây jumper, resistor
+
+# Kết Nối I2C:
+SDA (GPIO 21) → ADS1115 SDA
+SCL (GPIO 22) → ADS1115 SCL
+SDA → LCD SDA
+SCL → LCD SCL
+
+# Kết Nối GPIO:
+GPIO 32, 33 → Relay 1, 2 (Fan)
+GPIO 25, 4  → Buzzer 1, 2
+GPIO 26, 27 → Servo 1, 2
+GPIO 34, 35, 23 → Button 1, 2, All (Emergency)
 ```
 
-### **B. Backend Setup**
+### 7.2 Bước 2: Cấu Hình & Upload Arduino
 
 ```bash
-# 1. Navigate to backend
+# 1. Cài Arduino IDE
+# https://www.arduino.cc/en/software
+
+# 2. Cài ESP32 Board Support
+
+# 3. Cài thư viện:
+# - WiFi.h (built-in)
+# - PubSubClient (MQTT)
+# - ArduinoJson
+# - Adafruit_ADS1X15
+# - LiquidCrystal_I2C
+# - ESP32Servo
+
+# 4. Edit Arduino/newestVersion.ino:
+#define WIFI_SSID "your-wifi"
+#define WIFI_PASSWORD "your-password"
+#define MQTT_SERVER "your-broker"
+#define MQTT_PORT 8883
+#define MQTT_USERNAME "your-username"
+#define MQTT_PASSWORD "your-password"
+
+# 5. Upload to device
+# Tools → Board → ESP32 Dev Module
+# Sketch → Upload
+```
+
+### 7.3 Bước 3: Cấu Hình Backend
+
+```bash
 cd Backend
 
-# 2. Install dependencies
+# 1. Cài dependencies
 npm install
 
-# 3. Configure environment
-# Create .env file:
+# 2. Tạo .env
+cat > .env << EOF
 PORT=5000
 NODE_ENV=development
 DATABASE_URL=mysql://root:root@localhost:3306/air_quality_db
-JWT_SECRET=your_secret_key_here_change_this
-MQTT_BROKER=your-hivemq-broker.hivemq.cloud
+JWT_SECRET=your-secret-key-change-in-production
+MQTT_BROKER=your-broker.hivemq.cloud
 MQTT_PORT=8883
-MQTT_USERNAME=your_username
-MQTT_PASSWORD=your_password
+MQTT_USERNAME=your-username
+MQTT_PASSWORD=your-password
 MQTT_USE_TLS=true
+EOF
 
-# 4. Setup database
+# 3. Setup database
 npx prisma migrate deploy
 
-# 5. Start server
-npm run dev          # Development mode (auto-reload)
-npm start            # Production mode
+# 4. Chạy server
+npm run dev
+# Server runs on http://localhost:5000
 ```
 
-### **C. Frontend Setup**
+### 7.4 Bước 4: Cấu Hình Frontend
 
 ```bash
-# 1. Navigate to frontend
 cd Frontend
 
-# 2. Install dependencies
+# 1. Cài dependencies
 npm install
 
-# 3. Start dev server
+# 2. Chạy dev server
 npm run dev
+# Frontend runs on http://localhost:5173
 
-# App will be available at http://localhost:5173
-
-# Build for production
-npm run build        # Creates dist/ folder
-npm run preview      # Preview production build
+# 3. Build for production
+npm run build
+# Output: dist/
 ```
 
-### **D. Arduino/ESP32 Setup**
+### 7.5 Bước 5: Kiểm Tra Kết Nối
 
 ```bash
-# Option 1: Using Arduino IDE
-1. Install Arduino IDE: https://www.arduino.cc/en/software
-2. Install ESP32 board support (Boards Manager)
-3. Install required libraries:
-   - WiFi.h (built-in)
-   - PubSubClient (MQTT client)
-   - ArduinoJson
-   - Adafruit_ADS1X15
-   - LiquidCrystal_I2C
-   - ESP32Servo
-4. Open Arduino/newestVersion.ino
-5. Configure WiFi & MQTT settings
-6. Select Board: ESP32 Dev Module
-7. Upload to device
+# 1. Kiểm tra ESP32 kết nối WiFi
+# - Xem Serial Monitor (9600 baud)
+# - Tìm "[WiFi] Connected to SSID"
 
-# Option 2: Using PlatformIO (Recommended)
-1. Install PlatformIO: https://platformio.org/install/ide
-2. platformio.ini already configured
-3. Run: pio run -t upload
-```
+# 2. Kiểm tra MQTT kết nối
+# - Backend logs: "[MQTT] Client connected"
+# - Serial: "[MQTT] Publishing to air/data/..."
 
-### **E. System Integration**
+# 3. Kiểm tra Backend API
+curl http://localhost:5000/health
+# Response: {"status":"OK","timestamp":"..."}
 
-```bash
-# 1. Start MySQL server
-mysql -u root -p
-
-# 2. Start backend (Terminal 1)
-cd Backend && npm run dev
-
-# 3. Start frontend (Terminal 2)
-cd Frontend && npm run dev
-
-# 4. Upload Arduino firmware to ESP32
-
-# 5. Access dashboard
-http://localhost:5173
-Login: (default credentials if seeded)
+# 4. Kiểm tra Frontend
+# Mở http://localhost:5173
+# Đăng nhập, xem dashboard
 ```
 
 ---
 
-## 🎨 Tính Năng Chi Tiết
+## 8. Hướng Dẫn Sử Dụng
 
-### **Backend Features**
+### 8.1 Chế Độ Offline (Không Cần WiFi)
 
-✅ **Device Management**
-- Claim device via PIN
-- Track device status (ONLINE/OFFLINE)
-- Support multiple devices per user
-- Device claiming with MAC address verification
+**Thiết Lập Ban Đầu:**
+1. Upload code Arduino lên ESP32
+2. Kết nối phần cứng (sensor, relay, servo)
+3. Cấp nguồn 5V
 
-✅ **Real-time Monitoring**
-- Live telemetry data via Socket.io
-- Sensor readings every 5-10 seconds
-- Room-level data aggregation
-- Historical data storage (time-series)
+**Hoạt Động Tự Động:**
+- Device tự động đọc cảm biến
+- Phân loại chất lượng không khí (GOOD/MOD/BAD/DANG)
+- Tự động bật/tắt quạt dựa trên AQI (chế độ AUTO)
+- Mở/đóng cửa sổ tự động
+- LCD hiển thị trạng thái realtime
+- Nút bấm khẩn cấp luôn hoạt động
 
-✅ **Control System**
-- Remote fan control
-- Buzzer alerts
-- Servo-based window control (0-180°)
-- AUTO/MANUAL mode switching
-- Emergency mode activation
+**LCD Display:**
+```
+Line 1: R1: MOD [Fan:ON ]
+Line 2: R2: GOOD[Fan:OFF]
 
-✅ **Authentication & Authorization**
-- User registration/login
-- JWT token-based auth
-- Token refresh mechanism
-- Role-based access control (user, admin)
+MOD = AQI 50-100 (Trung bình)
+Fan:ON = Quạt bật
+Window:90° = Cửa mở 90 độ
+```
 
-✅ **Firmware OTA System**
-- Firmware upload with MD5 verification
-- Version management
-- Batch device updates
-- Update progress tracking
-- Automatic rollback on failure
+**Nút Bấm:**
+- Button Room 1 (GPIO 34): Khẩn cấp phòng 1
+- Button Room 2 (GPIO 35): Khẩn cấp phòng 2
+- Button All (GPIO 23): Khẩn cấp toàn bộ
 
-✅ **Activity Logging**
-- All user actions logged
-- Device state changes tracked
-- Error logging
-- Audit trail for compliance
+Khi bấm → Buzzer reo + Cửa đóng + Quạt bật
 
-✅ **Database Management**
-- Prisma ORM for type safety
-- Auto-migration support
-- Relationship modeling (many-to-many, etc.)
-- Query optimization with indexes
+### 8.2 Chế Độ Online (Có WiFi + MQTT)
 
-### **Frontend Features**
+**Kết Nối WiFi:**
+```cpp
+WIFI_SSID "Your-Network"
+WIFI_PASSWORD "Your-Password"
+```
 
-✅ **User Interface**
-- Clean, modern dashboard
-- Real-time status indicators
-- Device list with status badges
-- Room cards with telemetry display
-- Activity feed
+**Kết Nối MQTT:**
+- Broker: HiveMQ Cloud hoặc local Mosquitto
+- Port: 8883 (TLS)
+- Topics:
+  - Publish: `air/data/{device_id}`
+  - Subscribe: `air/updatefirmware`
 
-✅ **Firmware Management**
-- Upload new firmware versions
-- Select target device for update
-- Monitor update progress
-- View update history
-- Rollback to previous version (if supported)
+**Web Dashboard:**
+1. Mở http://localhost:5173
+2. Đăng nhập tài khoản
+3. Thêm device (Claim via PIN)
+4. Xem monitoring realtime
+5. Remote control (bật/tắt, điều khiển mode)
+6. Xem lịch sử data
 
-✅ **Real-time Updates**
-- Live sensor data without refresh
-- Instant notification of device status
-- Real-time control feedback
-- Live activity log
+**OTA Firmware Update:**
+1. Chuẩn bị file `.bin` (compile từ Arduino IDE)
+2. Tải lên OTA Management page
+3. Chọn device target
+4. Click "Send OTA Update"
+5. Device tự động download, verify, flash
+6. Device tự động restart
+7. Xem status update trong dashboard
 
-✅ **Responsive Design**
-- Mobile-friendly interface
-- Adapts to different screen sizes
-- Touch-friendly buttons
-- Desktop-optimized layout
+### 8.3 Điều Khiển Chế Độ
 
-### **Embedded Features**
+**Chế Độ AUTO:**
+- Device tự động điều khiển dựa trên AQI
+- Không cần tương tác
+- Được khôi phục từ RTC khi reset
 
-✅ **Sensor Data Processing**
-- ADS1115 ADC reading (16-bit precision)
-- EMA filtering for noise reduction
-- Air quality level classification
-- Sensor error detection
-
-✅ **Device Control**
-- Fan relay control with state tracking
-- Buzzer PWM control
-- Servo motor positioning (0-180°)
-- Synchronized actuator execution
-
-✅ **Multi-Task Management**
-- 6 independent FreeRTOS tasks
-- Dual-core utilization (WiFi vs Compute)
-- Task priority scheduling
-- Interrupt-driven emergency response
-
-✅ **Emergency Mode**
-- 3 emergency buttons (per-room + all)
-- Debounced button input (250ms)
-- Instant buzzer & window close
-- Mode persistence across resets
-
-✅ **OTA Firmware Updates**
-- Over-the-air updates via MQTT
-- HTTP-based file download
-- MD5 checksum verification
-- Automatic reboot on success
-- Status reporting
-
-✅ **Connectivity**
-- WiFi 802.11n support
-- MQTT protocol (3.1.1 & 5.0)
-- TLS encrypted communication
-- Auto-reconnect with backoff
+**Chế Độ MANUAL:**
+- Điều khiển từ nút bấm vật lý
+- Hoặc remote control từ web (khi online)
+- Cần mỗi lần thay đổi
 
 ---
 
-## �🟢 Offline vs Online Mode Comparison
+## 9. Tài Liệu Tham Khảo
 
-### **Tính Năng Hoạt Động Trong Chế Độ Offline (Không WiFi)**
-
-| Tính Năng | Trạng Thái | Mô Tả |
-|-----------|-----------|-------|
-| **Đọc Cảm Biến** | ✅ Hoạt động | ADS1115 đọc liên tục, không cần mạng |
-| **Phân Loại AQI** | ✅ Hoạt động | GOOD/MOD/BAD/DANG tự động xác định |
-| **Chế Độ AUTO** | ✅ Hoạt động | Tự động điều khiển quạt/cửa/còi dựa trên AQI |
-| **Chế Độ MANUAL** | ✅ Hoạt động | Điều khiển từ nút bấm trên thiết bị |
-| **LCD Display** | ✅ Hoạt động | Hiển thị realtime trên LCD 16x2 |
-| **Nút Khẩn Cấp** | ✅ **Hoạt động ngay lập tức** | Không cần code, phản ứng < 100ms |
-| **Lưu Trạng Thái** | ✅ Hoạt động | RTC memory giữ trạng thái qua reset |
-| **Watchdog** | ✅ Hoạt động | Tự động khôi phục nếu hang |
-| **Quạt Tự Động** | ✅ Hoạt động | Bật/tắt dựa trên AQI tự động |
-| **Cửa Sổ Tự Động** | ✅ Hoạt động | Mở/đóng dựa trên AQI tự động |
-| **Buzzer Cảnh Báo** | ✅ Hoạt động | Cảnh báo khi AQI cao tự động |
-| **Web Dashboard** | ❌ Không khả dụng | Không có kết nối backend |
-| **Cloud Logging** | ❌ Không lưu | Dữ liệu chỉ trong RAM device |
-| **Remote Control** | ❌ Không thể | Chỉ nút bấm vật lý hoạt động |
-| **OTA Updates** | ❌ Không thể | Cần kết nối USB (không OTA) |
-| **Lịch Sử Dữ Liệu** | ❌ Không lưu | Chỉ thời gian hiện tại |
-
-### **Tính Năng Thêm Khi Online (Có WiFi + MQTT)**
-
-| Tính Năng | Trạng Thái | Mô Tả |
-|-----------|-----------|-------|
-| **Tất Cả Offline** | ✅ Vẫn hoạt động | + Kết nối cloud |
-| **Web Dashboard** | ✅ Hoạt động | Xem device realtime từ web |
-| **Remote Control** | ✅ Hoạt động | Điều khiển từ web browser |
-| **Cloud Logging** | ✅ Hoạt động | Lưu dữ liệu vào MySQL |
-| **OTA Firmware** | ✅ Hoạt động | Cập nhật không cần USB |
-| **Lịch Sử Dữ Liệu** | ✅ Hoạt động | Xem trend/history dài hạn |
-| **Thông Báo** | ✅ Hoạt động | Toast notifications trên web |
-| **Multi-User** | ✅ Hoạt động | Nhiều người dùng truy cập |
-| **Activity Logs** | ✅ Hoạt động | Ghi nhận tất cả hành động |
-| **Data Sync** | ✅ Hoạt động | Đồng bộ trạng thái cloud ↔ device |
-
-### **Ưu Điểm Kiến Trúc Hybrid**
+### 9.1 Tài Liệu Trong Dự Án
 
 ```
-🟢 Device Offline → 🟡 WiFi Drop → 🟢 Device Offline → 🟠 WiFi Restored
-  100% tự động      Tự động fallback  100% tự động      Tự động sync
-  
-Người dùng không biết gì!
-Hệ thống vẫn hoạt động bình thường.
-Không có downtime, không có mất dữ liệu điều khiển.
+/doc/
+├─ BACKEND-SETUP-GUIDE.md
+│  └─ Chi tiết cài đặt backend
+├─ BACKEND-SYSTEM-DESIGN.md
+│  └─ Kiến trúc backend, API, database
+├─ EMBEDDED-FIRMWARE-ANALYSIS.md
+│  └─ Chi tiết firmware ESP32, FreeRTOS
+├─ OTA-IMPLEMENTATION-GUIDE.md
+│  └─ Hướng dẫn OTA update
+└─ FIRMWARE-OTA-UPDATE-GUIDE.md
+   └─ MQTT payload format
+
+/
+├─ README.md (chuẩn)
+├─ Arduino/newestVersion.ino
+├─ Backend/ (Express.js API)
+├─ Frontend/ (React Dashboard)
+└─ doc/
 ```
+
+### 9.2 Tài Liệu Ngoài
+
+- **FreeRTOS**: https://www.freertos.org/
+- **ESP32 Datasheet**: https://www.espressif.com/
+- **MQTT 3.1.1**: https://mqtt.org/
+- **HiveMQ**: https://www.hivemq.com/
+- **Node.js**: https://nodejs.org/
+- **Prisma ORM**: https://www.prisma.io/
+
+### 9.3 Troubleshooting
+
+**Device không kết nối WiFi:**
+- Kiểm tra SSID/password
+- Xem Serial Monitor 9600 baud
+- Tìm "[WiFi] Connection failed"
+
+**MQTT không kết nối:**
+- Kiểm tra broker URL/port
+- Kiểm tra username/password
+- Kiểm tra firewall
+
+**Backend không nhận dữ liệu:**
+- Kiểm tra database connection
+- Xem backend logs
+- Kiểm tra MQTT topic
+
+**OTA update thất bại:**
+- Kiểm tra file .bin size
+- Verify MD5 hash
+- Xem device logs
 
 ---
 
-## �📚 Tài Liệu
+## 10. Kết Luận
 
-Tài liệu chi tiết có sẵn trong thư mục `/doc`:
+### 10.1 Tóm Tắt
 
-### **Backend Documentation**
-- [BACKEND-SETUP-GUIDE.md](doc/BACKEND-SETUP-GUIDE.md)
-  - Step-by-step installation
-  - Database configuration
-  - MQTT broker setup
-  - Troubleshooting guide
+Dự án này cung cấp một **hệ thống nhúng hoàn chỉnh** cho phép:
+- ✅ Giám sát chất lượng không khí độc lập (offline-first)
+- ✅ Điều khiển thiết bị tự động dựa trên dữ liệu cảm biến
+- ✅ Quản lý từ xa thông qua web khi có kết nối
+- ✅ Cập nhật firmware không cần USB
+- ✅ Ghi nhận lịch sử data trên cloud
 
-- [BACKEND-SYSTEM-DESIGN.md](doc/BACKEND-SYSTEM-DESIGN.md)
-  - Architecture overview
-  - Database schema
-  - API endpoint reference
-  - MQTT communication patterns
-  - Authentication flow
+### 10.2 Điểm Mạnh
 
-### **Embedded Documentation**
-- [EMBEDDED-FIRMWARE-ANALYSIS.md](doc/EMBEDDED-FIRMWARE-ANALYSIS.md)
-  - FreeRTOS architecture
-  - Task synchronization details
-  - Hardware interfacing
-  - OTA update mechanism
-  - Interrupt handling
+1. **Tự Động Độc Lập**: Hoạt động 100% mà không cần internet
+2. **Reliable**: FreeRTOS, WDT, RTC backup đảm bảo uptime cao
+3. **Scalable**: Hỗ trợ nhiều phòng, nhiều device
+4. **Secure**: JWT auth, encrypted MQTT, password hashing
+5. **Cloud-Ready**: Optional cloud integration
+6. **Developer-Friendly**: Tài liệu chi tiết, code comments
 
-### **OTA Documentation**
-- [OTA-IMPLEMENTATION-GUIDE.md](OTA-IMPLEMENTATION-GUIDE.md)
-  - OTA workflow steps
-  - Configuration instructions
-  - Firmware upload process
-  - Device update triggering
+### 10.3 Hướng Phát Triển Tiếp
 
-- [FIRMWARE-OTA-UPDATE-GUIDE.md](FIRMWARE-OTA-UPDATE-GUIDE.md)
-  - MQTT payload formats
-  - Success/failure reporting
-  - Arduino code examples
+- [ ] Mobile app (iOS/Android)
+- [ ] Multi-language support
+- [ ] Scheduling (bật quạt theo thời gian)
+- [ ] Machine learning (dự đoán AQI)
+- [ ] Data export (CSV/Excel)
+- [ ] Advanced analytics dashboard
 
 ---
 
-## 🛠️ Development & Debugging
-
-### **Backend Debugging**
-
-```bash
-# Enable detailed logs
-DEBUG=* npm run dev
-
-# Use Prisma Studio
-npm run prisma:studio
-
-# Run migrations
-npm run prisma:migrate
-
-# Check database schema
-npx prisma db push
-```
-
-### **Frontend Debugging**
-
-```bash
-# React Developer Tools
-# Install React DevTools browser extension
-
-# Debug Socket.io
-localStorage.debug = 'socket.io-client:*'
-
-# Network inspection
-# Use browser DevTools → Network tab
-```
-
-### **Arduino Debugging**
-
-```bash
-# Serial Monitor output (9600 baud)
-[MQTT] Connected to broker
-[SENSOR] AQI: 145 (MOD)
-[ACTION] Fan R1 turned ON
-[OTA] Firmware update complete
-
-# Check logs in Serial Monitor:
-# Arduino IDE: Tools → Serial Monitor
-```
-
----
-
-## 📊 Performance Metrics
-
-| Metric | Value | Notes |
-|--------|-------|-------|
-| **Sensor Update Interval** | 5-10 sec | Configurable |
-| **MQTT Message Latency** | < 100ms | HiveMQ Cloud |
-| **API Response Time** | < 200ms | Typical |
-| **Socket.io Update Delay** | < 500ms | Real-time |
-| **OTA Download Speed** | ~500KB/s | WiFi 802.11n |
-| **Database Query Time** | < 50ms | Indexed queries |
-| **ESP32 CPU Usage** | ~30-40% | Multi-task load |
-| **Frontend FPS** | 60 FPS | Smooth animations |
-
----
-
-## 🔐 Security Features
-
-✅ **Data Encryption**
-- MQTT over TLS (8883)
-- HTTPS-ready backend
-- Secure JWT token storage
-
-✅ **Authentication**
-- Bcrypt password hashing
-- JWT token-based auth
-- Token expiration/refresh
-
-✅ **Input Validation**
-- Express validation middleware
-- SQL injection prevention (Prisma)
-- File upload restrictions
-
-✅ **CORS Protection**
-- Whitelist allowed origins
-- Preflight request handling
-
----
-
-## 📝 License & Author
-
-- **Author**: Nhung (BTL-Nhung)
-- **Created**: 2026-06-17
-- **Type**: Educational IoT System Project
-
----
-
-## 🤝 Support & Troubleshooting
-
-### **Common Issues**
-
-**1. MQTT Connection Failed**
-```
-Solution:
-- Check HiveMQ credentials
-- Verify firewall allows port 8883
-- Check network connectivity
-```
-
-**2. Database Connection Error**
-```
-Solution:
-- Verify MySQL is running
-- Check DATABASE_URL in .env
-- Run: npx prisma db push
-```
-
-**3. Firmware Upload Failed**
-```
-Solution:
-- Check .bin file format
-- Verify file size
-- Check server storage permissions
-```
-
----
-
-## 🎓 Learning Resources
-
-This project demonstrates:
-- **Advanced IoT Architecture**: Cloud ↔ Device communication patterns
-- **Real-time Systems**: FreeRTOS task scheduling and synchronization
-- **Full-Stack Development**: Backend, Frontend, Embedded
-- **Security**: Authentication, data encryption, input validation
-- **DevOps**: Configuration management, environment variables
-- **Database Design**: Relational modeling with Prisma ORM
-- **State Management**: Zustand for frontend state
-- **Real-time Communication**: Socket.io + MQTT
-
----
-
-## 📞 Contact & Support
-
-For questions or issues, refer to documentation files or check system logs.
-
-**Last Updated**: 2026-06-17  
-**Project Version**: 1.0.0  
-**System Status**: Production Ready ✅
-
----
-
-**Happy IoT Development! 🚀**
+**Phiên Bản**: 1.0.0  
+**Ngày Cập Nhật**: 2026-06-17  
+**Trạng Thái**: Production Ready ✅
