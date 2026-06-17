@@ -1,6 +1,8 @@
 # Air Quality Monitoring & Smart Control IoT System
 
-**Hệ thống IoT toàn diện cho quản lý chất lượng không khí và điều khiển thiết bị thông minh đa phòng**
+**Hệ thống nhúng (Embedded IoT) tích hợp với khả năng hoạt động độc lập không cần internet**
+
+> 🔌 **Standalone-First Design**: Thiết bị ESP32 hoạt động **hoàn toàn độc lập** với chế độ AUTO tự động điều khiển cảm biến và thiết bị. Khi có WiFi, kết nối MQTT để **tùy chọn** trao đổi dữ liệu với cloud/backend.
 
 ---
 
@@ -19,88 +21,151 @@
 
 ## 🎯 Tổng Quan Hệ Thống
 
-Đây là hệ thống IoT (Internet of Things) tích hợp nhằm giải quyết các vấn đề quản lý chất lượng không khí và điều khiển thiết bị thông minh trong môi trường đa phòng. Hệ thống hỗ trợ:
+Hệ thống nhúng IoT hybrid cho quản lý chất lượng không khí với **hai chế độ hoạt động**:
 
-✅ **Giám sát chất lượng không khí** - Đo đạc các chỉ số AQI, CO2, PM2.5, nhiệt độ, độ ẩm  
-✅ **Điều khiển thiết bị thông minh** - Quạt, cửa sổ, buzzer qua giao diện web  
-✅ **Cơ chế khẩn cấp** - Nút bấm trên thiết bị để kích hoạt chế độ an toàn  
-✅ **Cập nhật firmware OTA** - Nâng cấp phần mềm từ xa mà không cần kết nối USB  
-✅ **Ghi nhận nhật ký hoạt động** - Lịch sử các hành động và sự kiện  
-✅ **Giao diện web realtime** - Hiển thị dữ liệu trực tiếp với Socket.io  
-✅ **Xác thực an toàn** - JWT authentication cho tất cả API
+### **Chế độ Standalone (Offline) - Không cần Internet** ⚡
+Thiết bị ESP32 hoạt động **100% độc lập**:
+- ✅ Đọc cảm biến gas (ADS1115) liên tục
+- ✅ Xử lý dữ liệu và phân loại chất lượng không khí (GOOD/MOD/BAD/DANG)
+- ✅ **Tự động điều khiển** quạt, buzzer, cửa sổ dựa trên mức AQI (chế độ AUTO)
+- ✅ Nút khẩn cấp vật lý phản ứng ngay lập tức (< 100ms)
+- ✅ Hiển thị realtime trên LCD 16x2
+- ✅ **Không cần WiFi, không cần backend**
+
+### **Chế độ Connected (Online) - Có Internet** 🌐
+Khi kết nối WiFi + MQTT:
+- ✅ Tương tác với web dashboard (React/Vite)
+- ✅ Remote control từ web browser
+- ✅ Ghi nhận lịch sử data trên cloud
+- ✅ Update firmware OTA không cần USB
+- ✅ Real-time monitoring từ xa
+- ✅ Đồng bộ trạng thái thiết bị
+
+### **Tính Năng Chung**
+✅ **Multi-room Support** - Quản lý 2 phòng độc lập  
+✅ **Dual-Mode Control** - AUTO (tự động) + MANUAL (điều khiển)  
+✅ **Advanced Synchronization** - FreeRTOS, Semaphores, Task Notifications  
+✅ **Emergency System** - Nút bấm độc lập không cần code chạy  
+✅ **State Persistence** - RTC backup memory giữ trạng thái qua reset  
+✅ **Security** - JWT auth, encrypted MQTT, bcrypt passwords
 
 ---
 
 ## 🏗️ Kiến Trúc Hệ Thống
 
+### **Standalone Mode (Offline - No WiFi)**
+
+```
+┌─────────────────────────────────────────────────────────┐
+│  ESP32 Device (Standalone Operation)                    │
+│  ⚡ 100% Independent - No WiFi Needed                   │
+├─────────────────────────────────────────────────────────┤
+│                                                         │
+│  Core 0 (WiFi)              Core 1 (Compute)          │
+│  ┌──────────────────────┐  ┌──────────────────────┐   │
+│  │ WiFi Task (Idle)     │  │ Sensor Task          │   │
+│  │ MQTT Task (Skipped)  │  │ ├─ Read ADS1115      │   │
+│  │                      │  │ ├─ Apply EMA filter  │   │
+│  │                      │  │ ├─ Classify AQI      │   │
+│  │                      │  │ └─ Update LCD        │   │
+│  └──────────────────────┘  │                      │   │
+│                            │ Control Task (AUTO)  │   │
+│                            │ ├─ Check AQI level   │   │
+│                            │ ├─ Auto-activate fan │   │
+│                            │ ├─ Ring buzzer       │   │
+│                            │ ├─ Open/close window │   │
+│                            │ └─ Execute actuators │   │
+│                            │                      │   │
+│                            │ Emergency Task       │   │
+│                            │ └─ Respond to buttons│   │
+│  └──────────────────────────────────────────────┘    │
+│                                                         │
+│  I2C Hardware                  GPIO Hardware            │
+│  ├─ ADS1115 (Sensors)         ├─ Relays (Fans)        │
+│  └─ LCD 16x2 (Display)        ├─ Buzzers               │
+│                               ├─ Servo Motors          │
+│                               └─ Emergency Buttons     │
+│                                                         │
+│  ✅ Automatically adjusts fan/window based on AQI      │
+│  ✅ LCD shows real-time status                         │
+│  ✅ Physical buttons work anytime                      │
+│  ✅ NO internet required                               │
+└─────────────────────────────────────────────────────────┘
+```
+
+### **Connected Mode (Online - With WiFi + MQTT)**
+
 ```
 ┌────────────────────────────────────────────────────────────────────┐
-│                    Frontend Layer (React/Vite)                     │
-│              🌐 Dashboard | OTA Management | Real-time UI         │
+│                    Frontend (React/Vite)                           │
+│              🌐 Dashboard | OTA | Remote Control                  │
 │                    http://localhost:5173                           │
 └─────────────────────┬──────────────────────────────────────────────┘
-                      │ HTTP API + WebSocket
+                      │ HTTP + WebSocket
                       ▼
 ┌────────────────────────────────────────────────────────────────────┐
-│                    Backend API Layer (Express.js)                  │
-│  📡 RESTful API | Socket.io | MQTT Broker Client | Authentication │
+│                    Backend (Express.js + Socket.io)                │
+│              API | MQTT Broker Client | Database                  │
 │                    http://localhost:5000                           │
-├───────────────────────────────┬──────────────────────────────────┤
-│  Routes & Controllers         │  Services                         │
-│  - Auth API                   │  - MQTT Client Pool               │
-│  - Device Management API      │  - JWT Token Manager              │
-│  - Room Control API           │  - Database ORM (Prisma)          │
-│  - Telemetry API              │  - File Upload Handler            │
-│  - Activity Logs API          │  - Firmware Version Control       │
-│  - Firmware OTA API           │  - MD5 Hash Verification          │
-└───────────────────────────────┴──────────────────────────────────┘
-                      │
-          ┌───────────┴───────────┐
-          │                       │
-          ▼ (MySQL)               ▼ (MQTT Protocol)
-   ┌──────────────┐         ┌──────────────────────┐
-   │  Database    │         │  HiveMQ Cloud Broker │
-   │  (MySQL 8+)  │         │  (MQTT 3.1.1/5.0)    │
-   │  Prisma ORM  │         │  Secured with TLS    │
-   └──────────────┘         └──────────┬───────────┘
-                                       │
-                            ┌──────────┴──────────┐
-                            │                     │
-                            ▼ (MQTT Subscribe)    ▼ (MQTT Publish)
-                    Devices Receive           Devices Send
-                    Commands & Config        Telemetry Data
-                    Update Notifications     Status Reports
-                            │                     │
-        ┌───────────────────┴─────────────────────┴────────────────────┐
-        │                                                               │
-        ▼                                                               ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│  Embedded Devices (ESP32 with FreeRTOS)                             │
-│                                                                     │
-│  ┌──────────────────────────────────────────────────────────────┐  │
-│  │  Core 0: MQTT Task (Priority 1)        Core 1: Main Compute │  │
-│  │  • MQTT Publish/Subscribe               • Sensor Reading     │  │
-│  │  • Telemetry Upload                     • Emergency Detection│  │
-│  │  • LCD Display                          • Device Control     │  │
-│  │                                         • Data Processing    │  │
-│  │  Multi-Task Coordination with:                               │  │
-│  │  ├─ Semaphores (Mutex) - Bảo vệ dữ liệu chia sẻ           │  │
-│  │  ├─ Task Notifications - Đánh thức task khi có sự kiện     │  │
-│  │  ├─ Interrupt Handlers - Button emergency detection        │  │
-│  │  └─ Watchdog Timer - Bảo vệ khỏi deadlock                │  │
-│  └──────────────────────────────────────────────────────────────┘  │
-│                                                                     │
-│  Hardware Connections:                                              │
-│  ├─ I2C Bus (SDA=21, SCL=22)                                       │
-│  │  ├─ ADS1115: ADC 16-bit (Cảm biến MQ gas)                      │
-│  │  └─ LCD 16x2: Hiển thị trạng thái thời gian thực               │
-│  ├─ GPIO Digital I/O                                                │
-│  │  ├─ GPIO 32,33: Relay (Fan Control)                            │
-│  │  ├─ GPIO 25,4: Buzzer (Alert)                                  │
-│  │  ├─ GPIO 26,27: Servo Motor (Window Control)                   │
-│  │  └─ GPIO 34,35,23: Emergency Buttons (Interrupt)               │
-│  └─ WiFi 802.11n: Kết nối mạng                                    │
-└─────────────────────────────────────────────────────────────────────┘
+└──────┬──────────────────────────────────────────┬──────────────────┘
+       │                                          │
+       ▼ (MySQL)                        ▼ (MQTT 8883 - TLS)
+   ┌────────────┐                  ┌──────────────────────┐
+   │ MySQL DB   │                  │ HiveMQ Cloud Broker  │
+   │ + Prisma   │                  │ (MQTT 3.1.1/5.0)     │
+   └────────────┘                  └──────────┬───────────┘
+                                              │
+                                 ┌────────────┴────────────┐
+                                 │                         │
+                        ▼ (MQTT Subscribe)      ▼ (MQTT Publish)
+                   Commands from backend    Telemetry to backend
+                   Config updates           Status reports
+                   OTA firmware links       Device metrics
+                                 │                         │
+                    ┌────────────┴─────────────────┬──────┘
+                    │                              │
+        ┌───────────▼────────────────────────────▼─────────┐
+        │   ESP32 Device (Connected Mode)                  │
+        │   ⚡ Offline-capable + Cloud optional            │
+        ├────────────────────────────────────────────────────┤
+        │                                                    │
+        │  Core 0: MQTT                 Core 1: Compute    │
+        │  ├─ WiFi connect              ├─ Sensor read     │
+        │  ├─ MQTT publish              ├─ Data process    │
+        │  ├─ Receive commands          ├─ Control logic   │
+        │  └─ Handle OTA                ├─ Button handler  │
+        │                               └─ Actuator exec   │
+        │                                                    │
+        │  Key: Device still works if WiFi drops!          │
+        │  ✅ Falls back to standalone operation           │
+        │  ✅ Resumes cloud sync when WiFi returns         │
+        └────────────────────────────────────────────────────┘
+```
+
+### **Chế độ Chuyển Đổi (Mode Switching)**
+
+```
+┌─────────────────────────────────────────────────────────┐
+│  WiFi Available?                                        │
+├─────────────────────────────────────────────────────────┤
+│                                                         │
+│  NO (Offline)                    YES (Online)          │
+│  ────────────────────────────────────────────          │
+│  • Sensor Task: Active           • Sensor Task: Active │
+│  • Control Task: Active (AUTO)   • Control Task: Active│
+│  • LCD Task: Active              • LCD Task: Active    │
+│  • MQTT Task: Skipped            • MQTT Task: Active   │
+│  • Local control only            • Remote + Local      │
+│  • Buttons work instantly        • Cloud sync enabled  │
+│  • NO data logging to DB         • Data logged to DB   │
+│  • NO web dashboard              • Web dashboard live  │
+│  • NO OTA updates                • OTA available       │
+│                                                         │
+│  🔄 Device automatically switches modes                 │
+│     - Detects WiFi drop → Falls back to offline        │
+│     - WiFi restored → Auto-sync with cloud             │
+│     - Users never notice interruption                  │
+└─────────────────────────────────────────────────────────┘
 ```
 
 ---
@@ -173,6 +238,174 @@ Flow:
 - Centralized error middleware
 - Console logs với timestamps và severity levels
 - Activity logs saved in database
+
+#### 7. **MQTT Client Pool Management**
+```
+Connection Pattern:
+├─ One MQTT client per device
+├─ Auto-reconnect với exponential backoff
+├─ Graceful degradation on connection loss
+├─ Queue messages when offline
+└─ Sync when connection restored
+```
+
+---
+
+### **Hybrid Offline/Online Architecture**
+
+Đây là điểm **nổi bật chính** của hệ thống - **device hoạt động độc lập hoàn toàn**:
+
+#### **1. Chế Độ Standalone (Offline)**
+
+```
+Sơ đồ Luồng Dữ Liệu:
+
+┌─────────────────────────────────────────────────────────┐
+│         ESP32 Core 1 (Compute Core)                     │
+├─────────────────────────────────────────────────────────┤
+│                                                         │
+│  Sensor Task (Chạy liên tục, độc lập)                 │
+│  ├─ Đọc ADC từ ADS1115 (kênh 0, 1)                    │
+│  ├─ Áp dụng EMA filter                                │
+│  ├─ Phân loại: GOOD/MOD/BAD/DANG                      │
+│  └─ Lưu giá trị vào RAM                               │
+│                                                         │
+│  ▼                                                      │
+│                                                         │
+│  Control Task (Chạy theo chu kỳ ~1000ms)             │
+│  ├─ Nếu chế độ AUTO:                                  │
+│  │  ├─ IF AQI > 150 → Bật quạt                       │
+│  │  ├─ IF AQI > 200 → Mở cửa sổ + bật còi             │
+│  │  ├─ IF AQI < 100 → Tắt quạt                       │
+│  │  └─ IF AQI < 80  → Đóng cửa sổ + tắt còi          │
+│  │                                                    │
+│  ├─ Nếu chế độ MANUAL:                                │
+│  │  └─ Thực hiện lệnh từ nút bấm hoặc LCD            │
+│  │                                                    │
+│  ├─ Check trạng thái khẩn cấp:                       │
+│  │  ├─ Bấm nút Room 1 → Bật những gì cần thiết       │
+│  │  ├─ Bấm nút Room 2 → Bật những gì cần thiết       │
+│  │  └─ Bấm nút All   → TOÀN BỘ bật lên              │
+│  │                                                    │
+│  ├─ Thực thi:                                         │
+│  │  ├─ GPIO 32/33 cho Relay (quạt)                   │
+│  │  ├─ GPIO 25/4 cho Buzzer (PWM)                    │
+│  │  ├─ GPIO 26/27 cho Servo (PWM)                    │
+│  │  └─ RTC backup để persist trạng thái              │
+│  │                                                    │
+│  └─ Ghi log vào RTC memory (không phải cloud)        │
+│                                                         │
+│  ▼                                                      │
+│                                                         │
+│  LCD Task (Liên tục)                                  │
+│  └─ Hiển thị trên LCD 16x2:                          │
+│     Line 1: "R1: GOOD [Fan:ON]"                      │
+│     Line 2: "R2: MOD  [Fan:OFF]"                      │
+│                                                         │
+│  ▼                                                      │
+│                                                         │
+│  Emergency Task (Chờ Interrupt)                       │
+│  ├─ Khi nút được bấm:                                 │
+│  │  ├─ Debounce 250ms                                │
+│  │  ├─ Bật buzzer ngay lập tức (< 100ms)             │
+│  │  ├─ Đóng cửa sổ                                   │
+│  │  └─ Set cờ emergency                              │
+│  │                                                    │
+│  └─ **KHÔNG cần code chạy, chỉ hardware interrupt**  │
+│                                                         │
+└─────────────────────────────────────────────────────────┘
+
+**Đặc điểm Offline:**
+✅ Hoạt động 100% tự động sau khi nạp code
+✅ Không cần WiFi, không cần backend
+✅ Không cần internet để điều khiển
+✅ Nút bấm vật lý luôn có tác dụng ngay lập tức
+✅ LCD hiển thị tình trạng thực thời
+✅ Trạng thái được lưu trong RTC memory
+✅ Tiêu thụ điện năng thấp (Core 0 WiFi ngủ)
+✅ Phù hợp cho hành lang, phòng hoàn toàn offline
+```
+
+#### **2. Chế Độ Connected (Online)**
+
+```
+Bổ Sung Khi Có WiFi:
+
+┌─────────────────────────────────────────────────────────┐
+│         ESP32 Core 0 (WiFi Core)                        │
+├─────────────────────────────────────────────────────────┤
+│                                                         │
+│  MQTT Task (Khi WiFi OK)                              │
+│  ├─ Kết nối HiveMQ broker                             │
+│  ├─ Subscribe topic: air/updatefirmware               │
+│  ├─ Subscribe topic: air/control/{device_id}          │
+│  │                                                    │
+│  ├─ Publish hàng 10 giây:                             │
+│  │  └─ Topic: air/data/{device_id}                    │
+│  │     Payload: {                                     │
+│  │       "mac": "XX:XX:XX:XX:XX:XX",                 │
+│  │       "rooms": [                                   │
+│  │         {"index": 0, "aqi": 145, "level": "MOD"},  │
+│  │         {"index": 1, "aqi": 89, "level": "GOOD"}   │
+│  │       ],                                           │
+│  │       "timestamp": "2026-06-17T10:30:00Z"         │
+│  │     }                                              │
+│  │                                                    │
+│  ├─ Publish khi OTA thành công:                       │
+│  │  └─ Topic: air/firmwareupdatestatus               │
+│  │     {                                              │
+│  │       "mac_address": "XX:XX:XX:XX:XX:XX",         │
+│  │       "update": true,                              │
+│  │       "status": "success",                         │
+│  │       "version": "1.0.1"                           │
+│  │     }                                              │
+│  │                                                    │
+│  └─ **Khi WiFi mất → Tự động chuyển về Offline mode**│
+│                                                         │
+│  WiFi Failover:                                        │
+│  ├─ Phát hiện mất signal                              │
+│  ├─ Tự động ngủ Core 0                               │
+│  ├─ Core 1 (Sensor + Control) tiếp tục chạy         │
+│  ├─ LCD hiển thị "OFFLINE" icon                       │
+│  └─ Khi WiFi trở lại → Tự động sync dữ liệu          │
+│                                                         │
+└─────────────────────────────────────────────────────────┘
+
+**Bổ Sung Khi Connected:**
+✅ Gửi dữ liệu lên cloud (HiveMQ)
+✅ Backend nhận, lưu vào MySQL
+✅ Web dashboard hiển thị live
+✅ Remote control từ web
+✅ OTA firmware updates
+✅ Ghi nhật ký hoạt động
+✅ Đồng bộ trạng thái
+```
+
+#### **3. Tính Năng Chuyên Biệt**
+
+**Persistent State (RTC Backup Memory):**
+```c
+// Dữ liệu được lưu trong RTC memory - sống sót qua reset
+RTC_DATA_ATTR Mode savedMode[2];           // AUTO/MANUAL
+RTC_DATA_ATTR bool savedFan[2];            // Trạng thái quạt
+RTC_DATA_ATTR bool savedBuzzer[2];         // Trạng thái còi
+RTC_DATA_ATTR int savedWindowAngle[2];     // Góc cửa sổ
+RTC_DATA_ATTR bool savedEmergency[2];      // Cờ khẩn cấp
+RTC_DATA_ATTR bool wasResetByWDT;          // Được reset hay không
+
+// Thậm chí khi bị ngắt điện hoặc WDT reset, 
+// khi khởi động lại → device vẫn nhớ trạng thái cũ!
+```
+
+**Watchdog Timer (System Recovery):**
+```
+Nếu code bị hang (deadlock):
+├─ WDT tự động reset device
+├─ Device khởi động lại
+├─ Trạng thái được restore từ RTC
+├─ Quay trở lại hoạt động bình thường
+└─ Đảm bảo không bao giờ "chết" vĩnh viễn
+```
 
 ---
 
@@ -885,7 +1118,58 @@ Login: (default credentials if seeded)
 
 ---
 
-## 📚 Tài Liệu
+## �🟢 Offline vs Online Mode Comparison
+
+### **Tính Năng Hoạt Động Trong Chế Độ Offline (Không WiFi)**
+
+| Tính Năng | Trạng Thái | Mô Tả |
+|-----------|-----------|-------|
+| **Đọc Cảm Biến** | ✅ Hoạt động | ADS1115 đọc liên tục, không cần mạng |
+| **Phân Loại AQI** | ✅ Hoạt động | GOOD/MOD/BAD/DANG tự động xác định |
+| **Chế Độ AUTO** | ✅ Hoạt động | Tự động điều khiển quạt/cửa/còi dựa trên AQI |
+| **Chế Độ MANUAL** | ✅ Hoạt động | Điều khiển từ nút bấm trên thiết bị |
+| **LCD Display** | ✅ Hoạt động | Hiển thị realtime trên LCD 16x2 |
+| **Nút Khẩn Cấp** | ✅ **Hoạt động ngay lập tức** | Không cần code, phản ứng < 100ms |
+| **Lưu Trạng Thái** | ✅ Hoạt động | RTC memory giữ trạng thái qua reset |
+| **Watchdog** | ✅ Hoạt động | Tự động khôi phục nếu hang |
+| **Quạt Tự Động** | ✅ Hoạt động | Bật/tắt dựa trên AQI tự động |
+| **Cửa Sổ Tự Động** | ✅ Hoạt động | Mở/đóng dựa trên AQI tự động |
+| **Buzzer Cảnh Báo** | ✅ Hoạt động | Cảnh báo khi AQI cao tự động |
+| **Web Dashboard** | ❌ Không khả dụng | Không có kết nối backend |
+| **Cloud Logging** | ❌ Không lưu | Dữ liệu chỉ trong RAM device |
+| **Remote Control** | ❌ Không thể | Chỉ nút bấm vật lý hoạt động |
+| **OTA Updates** | ❌ Không thể | Cần kết nối USB (không OTA) |
+| **Lịch Sử Dữ Liệu** | ❌ Không lưu | Chỉ thời gian hiện tại |
+
+### **Tính Năng Thêm Khi Online (Có WiFi + MQTT)**
+
+| Tính Năng | Trạng Thái | Mô Tả |
+|-----------|-----------|-------|
+| **Tất Cả Offline** | ✅ Vẫn hoạt động | + Kết nối cloud |
+| **Web Dashboard** | ✅ Hoạt động | Xem device realtime từ web |
+| **Remote Control** | ✅ Hoạt động | Điều khiển từ web browser |
+| **Cloud Logging** | ✅ Hoạt động | Lưu dữ liệu vào MySQL |
+| **OTA Firmware** | ✅ Hoạt động | Cập nhật không cần USB |
+| **Lịch Sử Dữ Liệu** | ✅ Hoạt động | Xem trend/history dài hạn |
+| **Thông Báo** | ✅ Hoạt động | Toast notifications trên web |
+| **Multi-User** | ✅ Hoạt động | Nhiều người dùng truy cập |
+| **Activity Logs** | ✅ Hoạt động | Ghi nhận tất cả hành động |
+| **Data Sync** | ✅ Hoạt động | Đồng bộ trạng thái cloud ↔ device |
+
+### **Ưu Điểm Kiến Trúc Hybrid**
+
+```
+🟢 Device Offline → 🟡 WiFi Drop → 🟢 Device Offline → 🟠 WiFi Restored
+  100% tự động      Tự động fallback  100% tự động      Tự động sync
+  
+Người dùng không biết gì!
+Hệ thống vẫn hoạt động bình thường.
+Không có downtime, không có mất dữ liệu điều khiển.
+```
+
+---
+
+## �📚 Tài Liệu
 
 Tài liệu chi tiết có sẵn trong thư mục `/doc`:
 
