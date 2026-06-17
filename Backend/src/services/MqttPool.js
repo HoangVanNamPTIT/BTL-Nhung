@@ -27,7 +27,9 @@ class MqttPool {
     this.subscriptions = new Map(); // Map<device_id, subscription_handler>
     this.lastTelemetryTime = new Map(); // Map<device_id, timestamp>
     this.offlineTimeouts = new Map(); // Map<device_id, timeout_id>
+    this.lastControlTime = new Map(); // Map<device_id, timestamp> - track when control command was sent
     this.TELEMETRY_TIMEOUT = 15000; // 15 seconds - mark offline if no data
+    this.CONTROL_LOCKOUT = 3000; // 3 seconds - don't update mode from telemetry after sending control
   }
 
   /**
@@ -322,12 +324,35 @@ class MqttPool {
         );
 
         // Update room status
+        // IMPORTANT: Don't overwrite mode with telemetry data if control command was just sent
+        // This prevents device's old telemetry from undoing the control command
+        const lastControlTime = this.lastControlTime.get(deviceId);
+        const timeSinceControl = lastControlTime ? Date.now() - lastControlTime : Infinity;
+        const isInControlLockout = timeSinceControl < this.CONTROL_LOCKOUT;
+        
+        console.log(
+          `[Telemetry] Room ${room.room_name}: telemetry mode=${roomData.mode}, lastControl=${timeSinceControl}ms ago, lockout=${isInControlLockout}`
+        );
+        
+        const updateData = {
+          current_fan_status: roomData.fan,
+        };
+        
+        // Only update mode if NOT in control lockout period
+        if (!isInControlLockout) {
+          updateData.current_mode = roomData.mode;
+          console.log(
+            `[Telemetry] ✅ Mode updated to ${roomData.mode} (outside lockout period)`
+          );
+        } else {
+          console.log(
+            `[Telemetry] ⏳ Mode NOT updated (still in ${this.CONTROL_LOCKOUT}ms lockout period after control command)`
+          );
+        }
+        
         await this.prisma.room.update({
           where: { id: room.id },
-          data: {
-            current_fan_status: roomData.fan,
-            current_mode: roomData.mode,
-          },
+          data: updateData,
         });
 
         updates.push({
@@ -553,6 +578,10 @@ class MqttPool {
           }
         });
       }
+      
+      // Record when control command was sent - prevent telemetry from overwriting for next 3s
+      this.lastControlTime.set(deviceId, Date.now());
+      console.log(`[Control] 🔒 Control lockout set for device ${deviceId} (${this.CONTROL_LOCKOUT}ms)`);
     } catch (error) {
       console.error(`Error sending command to device ${deviceId}:`, error);
       throw error;

@@ -469,18 +469,16 @@ class DeviceController {
         });
       }
 
-      // Mark device as online
-      await prisma.device.update({
-        where: { id: device.id },
-        data: { status: "ONLINE", last_connected: new Date() },
-      });
-
       console.log(`[API] Device ${device.device_name} (${id}) reconnecting...`);
 
-      // Reconnect MQTT client
+      // Reconnect MQTT client - this will update status to ONLINE only if connection succeeds
       const { mqttPool } = require("../index");
       if (mqttPool) {
         await mqttPool.connectDevice(device);
+      } else {
+        return res.status(500).json({
+          error: "MQTT pool not initialized",
+        });
       }
 
       res.json({
